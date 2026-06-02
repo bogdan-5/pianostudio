@@ -5,6 +5,7 @@ import { buildPianoKeys, isBlackKey, midiToNoteName, PIANO_HIGH_MIDI, PIANO_LOW_
 
 type PracticeCanvasProps = {
   notes: NormalizedNote[];
+  trackIds?: string[];
   cursorSec: number;
   durationSec: number;
   mode: PracticeMode;
@@ -23,9 +24,12 @@ type PracticeCanvasProps = {
 const AUTO_SCROLL_EDGE_PX = 72;
 const AUTO_SCROLL_MAX_VISIBLE_WINDOWS_PER_SEC = 0.8;
 const WHEEL_SCROLL_SCALE = 0.9;
+const SINGLE_TRACK_NOTE_COLOR = "#38bdf8";
+const TRACK_NOTE_COLORS = ["#38bdf8", "#fb7185", "#a78bfa", "#34d399", "#f59e0b", "#f472b6"];
 
 export const PracticeCanvas = memo(function PracticeCanvas({
   notes,
+  trackIds = [],
   cursorSec,
   durationSec,
   mode,
@@ -53,6 +57,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
   const autoScrollVelocityRef = useRef(0);
   const [draftLoopRange, setDraftLoopRange] = useState<LoopRange | undefined>();
   const geometry = useMemo(() => buildGeometry(lowMidi, highMidi), [highMidi, lowMidi]);
+  const trackColorMap = useMemo(() => buildTrackColorMap(notes, trackIds), [notes, trackIds]);
 
   useEffect(() => {
     cursorSecRef.current = cursorSec;
@@ -263,7 +268,19 @@ export const PracticeCanvas = memo(function PracticeCanvas({
       ctx.clearRect(0, 0, width, height);
       paintBackground(ctx, width, height, geometry);
       paintLoopRange(ctx, width, height, cursorSec, secondsVisible, draftLoopRange ?? loopRange, Boolean(draftLoopRange));
-      paintNotes(ctx, width, height, geometry, notes, cursorSec, secondsVisible, targetIds, completedIds, missedIds);
+      paintNotes(
+        ctx,
+        width,
+        height,
+        geometry,
+        notes,
+        cursorSec,
+        secondsVisible,
+        targetIds,
+        completedIds,
+        missedIds,
+        trackColorMap
+      );
       paintNowLine(ctx, width, height, mode);
       paintActiveKeys(ctx, width, height, geometry, activePitches);
       paintRuler(ctx, width, height, cursorSec, durationSec);
@@ -285,7 +302,8 @@ export const PracticeCanvas = memo(function PracticeCanvas({
     mode,
     notes,
     secondsVisible,
-    targetIds
+    targetIds,
+    trackColorMap
   ]);
 
   return (
@@ -334,6 +352,31 @@ function buildGeometry(lowMidi: number, highMidi: number): KeyGeometry {
   return { xByMidi, widthByMidi, blackByMidi, whiteWidth, totalWhite: whiteKeys.length };
 }
 
+export function buildTrackColorMap(notes: NormalizedNote[], trackIds: string[]): Map<string, string> {
+  const noteTrackIds = new Set(notes.map((note) => note.trackId));
+  const orderedTrackIds: string[] = [];
+  const seen = new Set<string>();
+
+  trackIds.forEach((trackId) => {
+    if (!noteTrackIds.has(trackId) || seen.has(trackId)) return;
+    seen.add(trackId);
+    orderedTrackIds.push(trackId);
+  });
+
+  notes.forEach((note) => {
+    if (seen.has(note.trackId)) return;
+    seen.add(note.trackId);
+    orderedTrackIds.push(note.trackId);
+  });
+
+  return new Map(
+    orderedTrackIds.map((trackId, index) => [
+      trackId,
+      orderedTrackIds.length <= 1 ? SINGLE_TRACK_NOTE_COLOR : TRACK_NOTE_COLORS[index % TRACK_NOTE_COLORS.length]
+    ])
+  );
+}
+
 function paintBackground(ctx: CanvasRenderingContext2D, width: number, height: number, geometry: KeyGeometry) {
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
   gradient.addColorStop(0, "#111827");
@@ -370,7 +413,8 @@ function paintNotes(
   secondsVisible: number,
   targetIds: Set<string>,
   completedIds: Set<string>,
-  missedIds: Set<string>
+  missedIds: Set<string>,
+  trackColorMap: Map<string, string>
 ) {
   const pxPerSec = height / secondsVisible;
   const visibleStart = cursorSec - 0.3;
@@ -390,11 +434,11 @@ function paintNotes(
     const isTarget = targetIds.has(note.id);
     const isCompleted = completedIds.has(note.id);
     const isMissed = missedIds.has(note.id);
-    const handColor = note.hand === "left" ? "#38bdf8" : "#fb7185";
+    const trackColor = trackColorMap.get(note.trackId) ?? SINGLE_TRACK_NOTE_COLOR;
 
     ctx.save();
     ctx.globalAlpha = isCompleted ? 0.32 : isMissed ? 0.28 : 0.96;
-    ctx.fillStyle = isMissed ? "#64748b" : isTarget ? "#facc15" : handColor;
+    ctx.fillStyle = isMissed ? "#64748b" : isTarget ? "#facc15" : trackColor;
     roundRect(ctx, x, top, keyWidth, noteHeight, 6);
     ctx.fill();
     ctx.strokeStyle = isTarget ? "#fff7ad" : "rgba(255,255,255,0.28)";

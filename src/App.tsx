@@ -108,6 +108,10 @@ export function App() {
       .map((note): NormalizedNote => ({ ...note, midi: clampMidi(note.midi + transpose) }))
       .sort((a, b) => a.startSec - b.startSec || a.midi - b.midi);
   }, [selectedTrackIds, song, transpose]);
+  const selectedTrackOrder = useMemo(
+    () => song.tracks.map((track) => track.id).filter((trackId) => selectedTrackIds.includes(trackId)),
+    [selectedTrackIds, song.tracks]
+  );
   const loopNotes = useMemo(() => notesInLoopRange(practiceNotes, loopRange), [loopRange, practiceNotes]);
   const sessionNotes = loopRange ? loopNotes : practiceNotes;
   const notesRef = useSyncedRef(sessionNotes);
@@ -1037,6 +1041,7 @@ export function App() {
           <div className="canvasStage">
             <PracticeCanvas
               notes={practiceNotes}
+              trackIds={selectedTrackOrder}
               cursorSec={cursorSec}
               durationSec={song.durationSec}
               mode={mode}
