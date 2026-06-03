@@ -1,0 +1,22 @@
+<svg viewBox="-128 -128 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Piano Studio">
+  <rect x="-128" y="-128" width="256" height="256" rx="42" fill="#050607" />
+  <g
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="10"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    vector-effect="non-scaling-stroke"
+  >
+    <path d="M 0 -24 L 24 0 L 0 24 L -24 0 Z" />
+    <g id="arm">
+      <path d="M 0 -114 L 42 -60 L 0 -24 L -42 -60 Z" />
+      <path d="M 0 -114 L 0 -24" />
+      <path d="M -42 -60 L 42 -60" />
+      <path d="M -42 -60 L 0 -78 L 42 -60" />
+    </g>
+    <use href="#arm" transform="rotate(90)" />
+    <use href="#arm" transform="rotate(180)" />
+    <use href="#arm" transform="rotate(270)" />
+  </g>
+</svg>
