@@ -20,3 +20,14 @@ Open <http://127.0.0.1:5173/>.
 - Track selection, scrubbing, reset, speed, transpose, metronome, count-in, volume, and range zoom.
 
 Chrome or Edge are recommended for Web MIDI.
+
+## Deploy to Vercel
+
+This project is prepared for Vercel as a Vite app with root-level Vercel Functions:
+
+- Frontend build command: `npm run build`
+- Frontend output directory: `dist`
+- API routes: `/api/health`, `/api/search`, and `/api/midi`
+- Environment variables: none required
+
+After pushing to GitHub, import the repository in Vercel and use the Vite framework preset. The included `vercel.json` keeps the build settings in the repo and rewrites non-file, non-API routes back to `index.html` for the single-page app.
