@@ -128,10 +128,8 @@ select:focus-visible {
 }
 
 .iconTextButton,
-.settingsButton,
 .deviceSelect,
 .searchForm input,
-.searchForm select,
 .searchForm button,
 .uploadTarget,
 .roundButton,
@@ -150,8 +148,7 @@ select:focus-visible {
 }
 
 .iconTextButton,
-.deviceSelect,
-.settingsButton {
+.deviceSelect {
   height: 40px;
   border-radius: 8px;
 }
@@ -183,13 +180,6 @@ select:focus-visible {
   min-width: 168px;
   max-width: 240px;
   padding: 0 12px;
-}
-
-.settingsButton {
-  width: 42px;
-  display: inline-grid;
-  place-items: center;
-  cursor: pointer;
 }
 
 .studioLayout {
@@ -374,19 +364,17 @@ select:focus-visible {
 
 .searchForm {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 102px 40px;
+  grid-template-columns: minmax(0, 1fr) 40px;
   gap: 7px;
 }
 
 .searchForm input,
-.searchForm select,
 .searchForm button {
   height: 38px;
   border-radius: 8px;
 }
 
-.searchForm input,
-.searchForm select {
+.searchForm input {
   min-width: 0;
   padding: 0 10px;
   outline: none;
@@ -398,7 +386,6 @@ select:focus-visible {
 }
 
 .searchForm input:focus,
-.searchForm select:focus,
 .deviceSelect:focus {
   border-color: rgba(var(--accent-rgb), 0.74);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.14);
@@ -612,7 +599,6 @@ select:focus-visible {
 .demoButton:hover,
 .loopBar button:hover,
 .bottomStepper button:hover,
-.settingsButton:hover,
 .collapseButton:hover {
   border-color: rgba(var(--accent-rgb), 0.55);
   background: rgba(var(--accent-rgb), 0.1);
@@ -965,7 +951,6 @@ input[type="range"] {
   overflow: hidden;
 }
 
-.utilityChip,
 .bottomSlider,
 .bottomStepper,
 .bottomToggle {
@@ -980,11 +965,6 @@ input[type="range"] {
   font-size: 0.84rem;
 }
 
-.utilityChip {
-  padding: 0 12px;
-}
-
-.utilityChip svg,
 .bottomSlider svg,
 .bottomStepper svg,
 .bottomToggle svg {
@@ -1217,8 +1197,7 @@ input[type="range"] {
   }
 
   .deviceSelect,
-  .iconTextButton,
-  .settingsButton {
+  .iconTextButton {
     width: 100%;
   }
 
@@ -1283,13 +1262,8 @@ input[type="range"] {
     grid-template-columns: 1fr 42px;
   }
 
-  .searchForm select {
-    grid-column: 1 / -1;
-  }
-
   .bottomSlider,
   .bottomStepper,
-  .utilityChip,
   .bottomToggle {
     width: 100%;
   }

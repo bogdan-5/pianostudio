@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Gauge,
-  Headphones,
   Keyboard,
   ListMusic,
   Music2,
@@ -19,7 +18,6 @@ import {
   RefreshCw,
   Repeat2,
   Search,
-  Settings,
   SlidersHorizontal,
   Square,
   Upload,
@@ -84,7 +82,6 @@ export function App() {
   const [song, setSong] = useState<NormalizedSong>(starterSong);
   const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>(starterSong.tracks.map((track) => track.id));
   const [query, setQuery] = useState("");
-  const [source, setSource] = useState("all");
   const [results, setResults] = useState<SongSearchResult[]>([]);
   const [searchError, setSearchError] = useState("");
   const [searching, setSearching] = useState(false);
@@ -543,7 +540,7 @@ export function App() {
     setSearching(true);
     setSearchError("");
     try {
-      const response = await searchSongs(trimmedQuery, source);
+      const response = await searchSongs(trimmedQuery, "bitmidi");
       setResults(response.results);
       setSearchError(response.errors?.join(" | ") ?? "");
     } catch (error) {
@@ -551,7 +548,7 @@ export function App() {
     } finally {
       setSearching(false);
     }
-  }, [query, source]);
+  }, [query]);
 
   const resetPractice = useCallback(
     (duration = song.durationSec, range?: LoopRange | null) => {
@@ -768,32 +765,20 @@ export function App() {
             <Cable size={18} />
             {midi.permissionState === "ready" ? "MIDI Ready" : midi.permissionState === "unsupported" ? "No Web MIDI" : "Connect MIDI"}
           </button>
-          <select
-            className="deviceSelect"
-            value={midi.selectedDeviceId}
-            onChange={(event) => midi.setSelectedDeviceId(event.target.value)}
-            aria-label="MIDI input"
-          >
-            {midi.devices.length ? (
-              midi.devices.map((device) => (
+          {midi.devices.length > 1 ? (
+            <select
+              className="deviceSelect"
+              value={midi.selectedDeviceId}
+              onChange={(event) => midi.setSelectedDeviceId(event.target.value)}
+              aria-label="MIDI input"
+            >
+              {midi.devices.map((device) => (
                 <option key={device.id} value={device.id}>
                   {device.name}
                 </option>
-              ))
-            ) : (
-              <option value="">No device selected</option>
-            )}
-          </select>
-          <button
-            className="settingsButton"
-            aria-label="Settings"
-            onClick={() => {
-              setSidePanelOpen(true);
-              setActiveSidePanel("controls");
-            }}
-          >
-            <Settings size={18} />
-          </button>
+              ))}
+            </select>
+          ) : null}
         </div>
       </header>
 
@@ -859,13 +844,8 @@ export function App() {
                       <input
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
-                        placeholder="Search title, artist, or paste a MIDI URL"
+                        placeholder="Search"
                       />
-                      <select value={source} onChange={(event) => setSource(event.target.value)} aria-label="Search source">
-                        <option value="all">All</option>
-                        <option value="bitmidi">BitMidi</option>
-                        <option value="mutopia">Public Domain</option>
-                      </select>
                       <button type="submit" disabled={searching}>
                         {searching ? <RefreshCw size={17} className="spin" /> : <Search size={17} />}
                       </button>
@@ -1152,10 +1132,6 @@ export function App() {
           </div>
 
           <div className="bottomControlStrip">
-            <div className="utilityChip">
-              <Headphones size={17} />
-              <span>{audioStatus === "fallback" ? "Synth fallback" : audioStatus === "ready" ? "Grand samples" : "Audio idle"}</span>
-            </div>
             <label className="bottomSlider">
               <Volume2 size={17} />
               <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
