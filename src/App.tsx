@@ -29,7 +29,7 @@ import type { CSSProperties, DragEvent } from "react";
 import type { MidiInputEvent } from "./hooks/useWebMidi";
 import { useWebMidi } from "./hooks/useWebMidi";
 import { audioEngine } from "./lib/audioEngine";
-import { createBuiltInLesson, filterSongNotes, parseMidiFile } from "./lib/midiParser";
+import { filterSongNotes, parseMidiFile } from "./lib/midiParser";
 import {
   applyJudgement,
   applyMisses,
@@ -58,11 +58,16 @@ import {
 } from "../shared/music";
 
 const EMPTY_STATS: PracticeStats = { correct: 0, wrong: 0, missed: 0, streak: 0 };
-type SidePanelTab = "songs" | "tracks" | "controls" | "stats";
+type SidePanelTab = "freePlay" | "songs" | "tracks" | "controls" | "stats";
 type AccentThemeId = "purple" | "teal" | "gold" | "blue" | "pink";
+type FreePlayNote = NormalizedNote & { releasedAtSec?: number };
 
 const DEFAULT_ACCENT_THEME: AccentThemeId = "gold";
 const ACCENT_KEY = "piano-studio-accent-theme";
+const FREE_PLAY_TRACK_ID = "free-play";
+const FREE_PLAY_HISTORY_PADDING_SEC = 2;
+const EMPTY_ID_SET = new Set<string>();
+const EMPTY_PITCH_SET = new Set<number>();
 const ACCENT_THEMES: Array<{
   id: AccentThemeId;
   label: string;
@@ -78,9 +83,8 @@ const ACCENT_THEMES: Array<{
   ];
 
 export function App() {
-  const starterSong = useMemo(() => createBuiltInLesson(), []);
-  const [song, setSong] = useState<NormalizedSong>(starterSong);
-  const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>(starterSong.tracks.map((track) => track.id));
+  const [song, setSong] = useState<NormalizedSong | null>(null);
+  const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SongSearchResult[]>([]);
   const [searchError, setSearchError] = useState("");
@@ -95,7 +99,7 @@ export function App() {
   const [speed, setSpeed] = useState(1);
   const [transpose, setTranspose] = useState(0);
   const [volume, setVolume] = useState(0.3);
-  const [secondsVisible, setSecondsVisible] = useState(6);
+  const [secondsVisible, setSecondsVisible] = useState(4);
   const [rangeMode, setRangeMode] = useState<"full" | "song">("full");
   const [keyboardBaseMidi, setKeyboardBaseMidi] = useState(60);
   const [metronome, setMetronome] = useState(false);
@@ -111,37 +115,61 @@ export function App() {
   const [stats, setStats] = useState<PracticeStats>(EMPTY_STATS);
   const [audioStatus, setAudioStatus] = useState(audioEngine.status);
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
-  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelTab>("songs");
+  const [activeSidePanel, setActiveSidePanel] = useState<SidePanelTab>("freePlay");
   const [accentThemeId, setAccentThemeId] = useState<AccentThemeId>(() => loadAccentTheme());
+  const [freePlayCursorSec, setFreePlayCursorSec] = useState(0);
+  const [freePlayNotes, setFreePlayNotes] = useState<FreePlayNote[]>([]);
 
+  const isFreePlay = activeSidePanel === "freePlay" || !song;
   const cursorRef = useSyncedRef(cursorSec);
   const completedRef = useSyncedRef(completedIds);
   const missedRef = useSyncedRef(missedIds);
   const playingRef = useSyncedRef(isPlaying);
   const demoPlayingRef = useSyncedRef(isDemoPlaying);
   const loopRangeRef = useSyncedRef(loopRange);
+  const isFreePlayRef = useSyncedRef(isFreePlay);
+  const freePlayCursorRef = useSyncedRef(freePlayCursorSec);
   const heldPitchesRef = useRef<Set<number>>(new Set());
   const recentPitchTouchesRef = useRef<Map<number, RecentPitchTouch>>(new Map());
   const demoStartedIdsRef = useRef<Set<string>>(new Set());
   const demoPitchCountsRef = useRef<Map<number, number>>(new Map());
   const demoStopTimersRef = useRef<number[]>([]);
   const uploadDragDepthRef = useRef(0);
+  const freePlayClockStartRef = useRef(typeof performance === "undefined" ? 0 : performance.now());
+  const freePlayActiveNotesRef = useRef<Map<number, string>>(new Map());
+  const freePlayNextIdRef = useRef(0);
 
   const practiceNotes = useMemo(() => {
+    if (!song) return [];
     return filterSongNotes(song, selectedTrackIds)
       .map((note): NormalizedNote => ({ ...note, midi: clampMidi(note.midi + transpose) }))
       .sort((a, b) => a.startSec - b.startSec || a.midi - b.midi);
   }, [selectedTrackIds, song, transpose]);
   const selectedTrackOrder = useMemo(
-    () => song.tracks.map((track) => track.id).filter((trackId) => selectedTrackIds.includes(trackId)),
-    [selectedTrackIds, song.tracks]
+    () => song?.tracks.map((track) => track.id).filter((trackId) => selectedTrackIds.includes(trackId)) ?? [],
+    [selectedTrackIds, song]
   );
   const loopNotes = useMemo(() => notesInLoopRange(practiceNotes, loopRange), [loopRange, practiceNotes]);
   const sessionNotes = loopRange ? loopNotes : practiceNotes;
   const notesRef = useSyncedRef(sessionNotes);
+  const freePlayDisplayNotes = useMemo(
+    () =>
+      freePlayNotes
+        .map((note): NormalizedNote => {
+          const endSec = note.releasedAtSec ?? freePlayCursorSec;
+          return {
+            ...note,
+            durationSec: Math.max(0.08, endSec - note.startSec)
+          };
+        })
+        .filter((note) => note.startSec + note.durationSec >= freePlayCursorSec - secondsVisible - FREE_PLAY_HISTORY_PADDING_SEC)
+        .sort((a, b) => a.startSec - b.startSec || a.midi - b.midi),
+    [freePlayCursorSec, freePlayNotes, secondsVisible]
+  );
+  const songDurationSec = song?.durationSec ?? 0;
 
   const visibleRange = useMemo(() => {
-    if (rangeMode === "full" || !practiceNotes.length) {
+    if (isFreePlay || rangeMode === "full" || !practiceNotes.length) {
       return { low: PIANO_LOW_MIDI, high: PIANO_HIGH_MIDI };
     }
 
@@ -151,16 +179,16 @@ export function App() {
       low: clampMidi(min - 5),
       high: clampMidi(max + 5)
     };
-  }, [practiceNotes, rangeMode]);
+  }, [isFreePlay, practiceNotes, rangeMode]);
 
   const targetCluster = useMemo(
-    () => (mode === "wait" ? getTargetCluster(sessionNotes, cursorSec, completedIds) : undefined),
-    [completedIds, cursorSec, mode, sessionNotes]
+    () => (!isFreePlay && mode === "wait" ? getTargetCluster(sessionNotes, cursorSec, completedIds) : undefined),
+    [completedIds, cursorSec, isFreePlay, mode, sessionNotes]
   );
   const targetIds = useMemo(() => new Set(targetCluster?.notes.map((note) => note.id) ?? []), [targetCluster]);
   const targetPitches = useMemo(() => new Set(targetCluster?.notes.map((note) => note.midi) ?? []), [targetCluster]);
   const timelineStartSec = loopRange?.startSec ?? 0;
-  const timelineEndSec = loopRange?.endSec ?? song.durationSec;
+  const timelineEndSec = loopRange?.endSec ?? songDurationSec;
   const timelineDurationSec = Math.max(0.1, timelineEndSec - timelineStartSec);
   const timelineCursorSec = Math.min(timelineEndSec, Math.max(timelineStartSec, cursorSec));
   const completionPercent = Math.min(
@@ -269,6 +297,75 @@ export function App() {
     [releaseDemoPitch]
   );
 
+  const freePlayNowSec = useCallback(() => {
+    return Math.max(0, (performance.now() - freePlayClockStartRef.current) / 1000);
+  }, []);
+
+  const clearFreePlayNotes = useCallback(() => {
+    freePlayActiveNotesRef.current.clear();
+    freePlayClockStartRef.current = performance.now();
+    metronomeBeatRef.current = -1;
+    setFreePlayCursorSec(0);
+    setFreePlayNotes([]);
+  }, []);
+
+  const recordFreePlayNoteOn = useCallback(
+    (pitch: number, velocity: number) => {
+      const nowSec = freePlayNowSec();
+      const previousActiveId = freePlayActiveNotesRef.current.get(pitch);
+      const id = `free-${freePlayNextIdRef.current++}-${pitch}`;
+      freePlayActiveNotesRef.current.set(pitch, id);
+      setFreePlayCursorSec(nowSec);
+      setFreePlayNotes((current) => {
+        const closedPrevious = previousActiveId
+          ? current.map((note) =>
+            note.id === previousActiveId
+              ? { ...note, durationSec: Math.max(0.08, nowSec - note.startSec), releasedAtSec: nowSec }
+              : note
+          )
+          : current;
+
+        return pruneFreePlayNotes(
+          [
+            ...closedPrevious,
+            {
+              id,
+              midi: pitch,
+              startSec: nowSec,
+              durationSec: 0.08,
+              velocity,
+              trackId: FREE_PLAY_TRACK_ID,
+              hand: pitch < 60 ? "left" : "right"
+            }
+          ],
+          nowSec,
+          secondsVisible
+        );
+      });
+    },
+    [freePlayNowSec, secondsVisible]
+  );
+
+  const recordFreePlayNoteOff = useCallback(
+    (pitch: number) => {
+      const id = freePlayActiveNotesRef.current.get(pitch);
+      if (!id) return;
+      const nowSec = freePlayNowSec();
+      freePlayActiveNotesRef.current.delete(pitch);
+      setFreePlayCursorSec(nowSec);
+      setFreePlayNotes((current) =>
+        pruneFreePlayNotes(
+          current.map((note) =>
+            note.id === id ? { ...note, durationSec: Math.max(0.08, nowSec - note.startSec), releasedAtSec: nowSec } : note
+          ),
+          nowSec,
+          secondsVisible
+        )
+      );
+    },
+    [freePlayNowSec, secondsVisible]
+  );
+
   const handleNoteOn = useCallback(
     (midi: number, velocity = 0.76) => {
       const pitch = clampMidi(midi);
@@ -278,6 +375,11 @@ export function App() {
       recentPitchTouchesRef.current.set(pitch, { pressedAtMs: nowMs });
       setActivePitches((current) => new Set(current).add(pitch));
       audioEngine.playNote(pitch, velocity, { retrigger: wasHeld }).finally(() => setAudioStatus(audioEngine.status));
+
+      if (isFreePlayRef.current) {
+        recordFreePlayNoteOn(pitch, velocity);
+        return;
+      }
 
       const notes = notesRef.current;
       if (!notes.length) return;
@@ -315,7 +417,20 @@ export function App() {
         }
       }
     },
-    [completedRef, cursorRef, demoPlayingRef, isPlaying, loopRangeRef, mode, notesRef, playingRef, restartPracticeSequence, waiting]
+    [
+      completedRef,
+      cursorRef,
+      demoPlayingRef,
+      isFreePlayRef,
+      isPlaying,
+      loopRangeRef,
+      mode,
+      notesRef,
+      playingRef,
+      recordFreePlayNoteOn,
+      restartPracticeSequence,
+      waiting
+    ]
   );
 
   const handleNoteOff = useCallback((midi: number) => {
@@ -340,7 +455,8 @@ export function App() {
       return next;
     });
     audioEngine.stopNote(pitch);
-  }, []);
+    if (isFreePlayRef.current) recordFreePlayNoteOff(pitch);
+  }, [isFreePlayRef, recordFreePlayNoteOff]);
 
   const handleMidiEvent = useCallback(
     (event: MidiInputEvent) => {
@@ -375,10 +491,40 @@ export function App() {
   }, [accentThemeId]);
 
   useEffect(() => {
+    if (!isFreePlay) return;
+    freePlayClockStartRef.current = performance.now() - freePlayCursorRef.current * 1000;
+    metronomeBeatRef.current = -1;
+    setIsPlaying(false);
+    setWaiting(false);
+    setCountdown(0);
+    setLoopRange(undefined);
+    stopDemoPlayback();
+  }, [freePlayCursorRef, isFreePlay, stopDemoPlayback]);
+
+  useEffect(() => {
+    if (!isFreePlay) return;
+    let frame = 0;
+
+    const tick = () => {
+      const nowSec = freePlayNowSec();
+      setFreePlayCursorSec(nowSec);
+      setFreePlayNotes((current) => pruneFreePlayNotes(current, nowSec, secondsVisible));
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [freePlayNowSec, isFreePlay, secondsVisible]);
+
+  useEffect(() => {
     const down = (event: KeyboardEvent) => {
       if (event.repeat || isEditableTarget(event.target)) return;
       if (event.code === "KeyR") {
         event.preventDefault();
+        if (isFreePlayRef.current) {
+          clearFreePlayNotes();
+          return;
+        }
         restartPracticeSequence({ keepTransport: true });
         return;
       }
@@ -399,10 +545,10 @@ export function App() {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
-  }, [handleNoteOff, handleNoteOn, keyboardBaseMidi, restartPracticeSequence]);
+  }, [clearFreePlayNotes, handleNoteOff, handleNoteOn, isFreePlayRef, keyboardBaseMidi, restartPracticeSequence]);
 
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying || isFreePlay || !song) return;
     let frame = 0;
     let last = performance.now();
 
@@ -456,10 +602,10 @@ export function App() {
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [completedRef, isPlaying, loopRangeRef, missedRef, mode, notesRef, resetAttemptState, song.durationSec, speed]);
+  }, [completedRef, isFreePlay, isPlaying, loopRangeRef, missedRef, mode, notesRef, resetAttemptState, song, speed]);
 
   useEffect(() => {
-    if (!isDemoPlaying) return;
+    if (!isDemoPlaying || isFreePlay || !song) return;
     let frame = 0;
     let last = performance.now();
     const initialRange = loopRangeRef.current;
@@ -519,27 +665,31 @@ export function App() {
     return () => cancelAnimationFrame(frame);
   }, [
     cursorRef,
+    isFreePlay,
     isDemoPlaying,
     loopRangeRef,
     notesRef,
     resetAttemptState,
     sequenceRestartToken,
-    song.durationSec,
+    song,
     speed,
     triggerDemoNote
   ]);
 
   useEffect(() => {
-    if (!metronome || (!isPlaying && !isDemoPlaying) || !song.bpm) return;
-    const beatLength = 60 / song.bpm;
-    const beat = Math.floor(cursorSec / beatLength);
+    const metronomeIsRunning = isFreePlay || isPlaying || isDemoPlaying;
+    if (!metronome || !metronomeIsRunning) return;
+    const bpm = song?.bpm ?? 96;
+    const metronomeCursorSec = isFreePlay ? freePlayCursorSec : cursorSec;
+    const beatLength = 60 / bpm;
+    const beat = Math.floor(metronomeCursorSec / beatLength);
     if (beat < 0 || beat === metronomeBeatRef.current) return;
     metronomeBeatRef.current = beat;
     const pitch = beat % 4 === 0 ? 96 : 84;
     audioEngine.playNote(pitch, beat % 4 === 0 ? 0.26 : 0.18).then(() => {
       window.setTimeout(() => audioEngine.stopNote(pitch), 70);
     });
-  }, [cursorSec, isDemoPlaying, isPlaying, metronome, song.bpm]);
+  }, [cursorSec, freePlayCursorSec, isDemoPlaying, isFreePlay, isPlaying, metronome, song]);
 
   const doSearch = useCallback(async () => {
     const trimmedQuery = query.trim();
@@ -563,17 +713,18 @@ export function App() {
   }, [query]);
 
   const resetPractice = useCallback(
-    (duration = song.durationSec, range?: LoopRange | null) => {
+    (duration = songDurationSec, range?: LoopRange | null) => {
       restartPracticeSequence({ range });
       if (duration <= 0) setCursorSec(0);
     },
-    [restartPracticeSequence, song.durationSec]
+    [restartPracticeSequence, songDurationSec]
   );
 
   const loadSong = useCallback(
     (nextSong: NormalizedSong) => {
       setSong(nextSong);
       setSelectedTrackIds(nextSong.tracks.map((track) => track.id));
+      setActiveSidePanel("songs");
       setTranspose(0);
       setLoopRange(undefined);
       resetPractice(nextSong.durationSec, null);
@@ -619,6 +770,7 @@ export function App() {
 
   const seekCanvasViewport = useCallback(
     (value: number) => {
+      if (!song) return;
       const bounded = Math.min(song.durationSec, Math.max(0, value));
       const completedBefore = new Set(practiceNotes.filter((note) => note.startSec < bounded - 0.04).map((note) => note.id));
       stopDemoPlayback();
@@ -629,11 +781,12 @@ export function App() {
       setWaiting(false);
       setStats(EMPTY_STATS);
     },
-    [practiceNotes, song.durationSec, stopDemoPlayback]
+    [practiceNotes, song, stopDemoPlayback]
   );
 
   const selectLoopRange = useCallback(
     (range: LoopRange) => {
+      if (!song) return;
       const snapped = snapLoopRangeToNotes(range, practiceNotes, song.durationSec);
       if (!snapped) return;
       setLoopRange(snapped);
@@ -641,7 +794,7 @@ export function App() {
       setIsDemoPlaying(false);
       resetAttemptState();
     },
-    [practiceNotes, resetAttemptState, song.durationSec]
+    [practiceNotes, resetAttemptState, song]
   );
 
   const clearLoopRange = useCallback(() => {
@@ -650,7 +803,7 @@ export function App() {
   }, [restartPracticeSequence]);
 
   const startDemoPlayback = useCallback(async () => {
-    if (countdown) return;
+    if (countdown || isFreePlay || !song) return;
     stopDemoPlayback();
     clearInputMemory();
     await audioEngine.ensureReady().finally(() => setAudioStatus(audioEngine.status));
@@ -670,7 +823,7 @@ export function App() {
     setCursorSec(startAt);
     metronomeBeatRef.current = -1;
     setIsDemoPlaying(true);
-  }, [clearInputMemory, countdown, cursorRef, loopRangeRef, sessionNotes, song.durationSec, stopDemoPlayback]);
+  }, [clearInputMemory, countdown, cursorRef, isFreePlay, loopRangeRef, sessionNotes, song, stopDemoPlayback]);
 
   const toggleDemoPlayback = useCallback(() => {
     if (isDemoPlaying) {
@@ -681,7 +834,7 @@ export function App() {
   }, [isDemoPlaying, startDemoPlayback, stopDemoPlayback]);
 
   const startPlayback = useCallback(async () => {
-    if (countdown) return;
+    if (countdown || isFreePlay || !song) return;
     stopDemoPlayback();
     const range = loopRangeRef.current;
     if (range && (cursorRef.current < range.startSec || cursorRef.current >= range.endSec - 0.04)) {
@@ -703,7 +856,7 @@ export function App() {
     }
     setCountdown(0);
     setIsPlaying(true);
-  }, [countIn, countdown, cursorRef, loopRangeRef, song.bpm, stopDemoPlayback]);
+  }, [countIn, countdown, cursorRef, isFreePlay, loopRangeRef, song, stopDemoPlayback]);
 
   const togglePlay = useCallback(() => {
     if (isPlaying) {
@@ -851,6 +1004,13 @@ export function App() {
 
             <div className="sideTabs" role="tablist" aria-label="Practice panels">
               <button
+                className={activeSidePanel === "freePlay" ? "selected" : ""}
+                onClick={() => setActiveSidePanel("freePlay")}
+              >
+                <Keyboard size={16} />
+                Free Play
+              </button>
+              <button
                 className={activeSidePanel === "songs" ? "selected" : ""}
                 onClick={() => setActiveSidePanel("songs")}
               >
@@ -881,6 +1041,27 @@ export function App() {
             </div>
 
             <div className={`sidePanelBody ${activeSidePanel === "songs" ? "songsPanelHost" : ""}`}>
+              {activeSidePanel === "freePlay" ? (
+                <section className="panelBlock freePlayWelcome">
+                  <div className="panelTitle">
+                    <Keyboard size={18} />
+                    <h2>Welcome</h2>
+                  </div>
+                  <p>
+                    Welcome to Piano Studio. Play freely here, or load a song when you are ready to practice with falling notes.
+                  </p>
+                  <ul>
+                    <li>Connect MIDI for the best feel, or use the typing keyboard as a fallback.</li>
+                    <li>Search for a song or import a MIDI file from the Songs tab.</li>
+                    <li>Practice by playing along with the falling notes in Wait or Flow mode.</li>
+                    <li>Drag with left click to loop a time section for focused practice.</li>
+                    <li>Drag with right click to select only notes inside a rectangle.</li>
+                    <li>Use Demo to hear the selected song or loop played automatically.</li>
+                    <li>Adjust volume, metronome, sustain, speed, and transpose from the bottom bar.</li>
+                  </ul>
+                </section>
+              ) : null}
+
               {activeSidePanel === "songs" ? (
                 <div className="songsPanelBody">
                   <section className="panelBlock songSearchPanel">
@@ -959,23 +1140,27 @@ export function App() {
                     <ListMusic size={18} />
                     <h2>Tracks</h2>
                   </div>
-                  <div className="trackList">
-                    {song.tracks.map((track) => (
-                      <label className="trackRow" key={track.id}>
-                        <input
-                          type="checkbox"
-                          checked={selectedTrackIds.includes(track.id)}
-                          onChange={() => toggleTrack(track.id)}
-                        />
-                        <span>
-                          <strong>{track.name}</strong>
-                          <small>
-                            {track.noteCount} notes - {midiToNoteName(track.pitchMin)}-{midiToNoteName(track.pitchMax)}
-                          </small>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
+                  {song ? (
+                    <div className="trackList">
+                      {song.tracks.map((track) => (
+                        <label className="trackRow" key={track.id}>
+                          <input
+                            type="checkbox"
+                            checked={selectedTrackIds.includes(track.id)}
+                            onChange={() => toggleTrack(track.id)}
+                          />
+                          <span>
+                            <strong>{track.name}</strong>
+                            <small>
+                              {track.noteCount} notes - {midiToNoteName(track.pitchMin)}-{midiToNoteName(track.pitchMax)}
+                            </small>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="emptyPanelNote">Load or import a song to choose tracks.</p>
+                  )}
                 </section>
               ) : null}
 
@@ -985,7 +1170,7 @@ export function App() {
                     <SlidersHorizontal size={18} />
                     <h2>Controls</h2>
                   </div>
-                  <ControlSlider icon={<ChevronDown size={17} />} label="Lookahead" value={secondsVisible} min={3} max={10} step={0.5} onChange={setSecondsVisible} suffix="s" />
+                  <ControlSlider icon={<ChevronDown size={17} />} label="Lookahead" value={secondsVisible} min={2} max={8} step={0.5} onChange={setSecondsVisible} suffix="s" />
                   <div className="stepperRow">
                     <span>Typing Octave</span>
                     <div>
@@ -1027,6 +1212,7 @@ export function App() {
                   <label className="toggleRow">
                     <input type="checkbox" checked={noteGlowEnabled} onChange={(event) => setNoteGlowEnabled(event.target.checked)} />
                     <span>Note glow</span>
+                    <em>May cause lag</em>
                   </label>
                 </section>
               ) : null}
@@ -1084,65 +1270,83 @@ export function App() {
 
         <section className="practicePanel">
           <div className="transportBar">
-            <div className="transportTop">
-              <div className="transportControls">
-                <button className="roundButton primary" onClick={togglePlay} disabled={Boolean(countdown)} aria-label={isPlaying ? "Pause" : "Play"}>
-                  {isPlaying ? <Pause size={24} /> : <Play size={24} />}
-                </button>
-                <button className="roundButton" onClick={stopTransport} aria-label="Stop">
-                  <Square size={18} fill="currentColor" />
-                </button>
-                <button className="roundButton" onClick={() => resetPractice()} aria-label="Restart">
-                  <RefreshCw size={18} />
-                </button>
-                <button
-                  className={`demoButton ${isDemoPlaying ? "active" : ""}`}
-                  onClick={toggleDemoPlayback}
-                  disabled={Boolean(countdown)}
-                  aria-label={isDemoPlaying ? "Stop demo playback" : "Play demo automatically"}
-                >
-                  {isDemoPlaying ? <Pause size={16} /> : <Music2 size={16} />}
-                  <span>{isDemoPlaying ? "Stop" : "Demo"}</span>
-                </button>
-              </div>
+            {isFreePlay ? (
+              <div className="transportTop freePlayTop">
+                <div className="transportControls">
+                  <button className="demoButton" onClick={clearFreePlayNotes} aria-label="Clear free play notes">
+                    <RefreshCw size={16} />
+                    <span>Clear</span>
+                  </button>
+                </div>
 
-              <div className="transportSong">
-                <strong>{song.title}</strong>
+                <div className="transportSong">
+                  <strong>Free Play</strong>
+                  <small>Live notes from MIDI or keyboard input</small>
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="transportTop">
+                  <div className="transportControls">
+                    <button className="roundButton primary" onClick={togglePlay} disabled={Boolean(countdown)} aria-label={isPlaying ? "Pause" : "Play"}>
+                      {isPlaying ? <Pause size={24} /> : <Play size={24} />}
+                    </button>
+                    <button className="roundButton" onClick={stopTransport} aria-label="Stop">
+                      <Square size={18} fill="currentColor" />
+                    </button>
+                    <button className="roundButton" onClick={() => resetPractice()} aria-label="Restart">
+                      <RefreshCw size={18} />
+                    </button>
+                    <button
+                      className={`demoButton ${isDemoPlaying ? "active" : ""}`}
+                      onClick={toggleDemoPlayback}
+                      disabled={Boolean(countdown)}
+                      aria-label={isDemoPlaying ? "Stop demo playback" : "Play demo automatically"}
+                    >
+                      {isDemoPlaying ? <Pause size={16} /> : <Music2 size={16} />}
+                      <span>{isDemoPlaying ? "Stop" : "Demo"}</span>
+                    </button>
+                  </div>
 
-              <div className="transportReadout">
-                <strong>
-                  {formatDuration(timelineCursorSec)}
-                  <span>/ {formatDuration(timelineEndSec)}</span>
-                </strong>
-                <small>{completionPercent}% Complete</small>
-              </div>
+                  <div className="transportSong">
+                    <strong>{song?.title ?? "No song selected"}</strong>
+                  </div>
 
-              <div className="modeSwitch" role="group" aria-label="Practice mode">
-                <button className={mode === "wait" ? "selected" : ""} onClick={() => setMode("wait")}>
-                  Wait
-                </button>
-                <button className={mode === "continuous" ? "selected" : ""} onClick={() => setMode("continuous")}>
-                  Flow
-                </button>
-              </div>
-            </div>
+                  <div className="transportReadout">
+                    <strong>
+                      {formatDuration(timelineCursorSec)}
+                      <span>/ {formatDuration(timelineEndSec)}</span>
+                    </strong>
+                    <small>{completionPercent}% Complete</small>
+                  </div>
 
-            <div className="transportProgress">
-              <span>{formatDuration(timelineStartSec)}</span>
-              <input
-                type="range"
-                min={timelineStartSec}
-                max={Math.max(timelineStartSec + 0.1, timelineEndSec)}
-                step={0.01}
-                value={timelineCursorSec}
-                onChange={(event) => seekTo(Number(event.target.value))}
-              />
-              <span>{formatDuration(timelineEndSec)}</span>
-            </div>
+                  <div className="modeSwitch" role="group" aria-label="Practice mode">
+                    <button className={mode === "wait" ? "selected" : ""} onClick={() => setMode("wait")}>
+                      Wait
+                    </button>
+                    <button className={mode === "continuous" ? "selected" : ""} onClick={() => setMode("continuous")}>
+                      Flow
+                    </button>
+                  </div>
+                </div>
+
+                <div className="transportProgress">
+                  <span>{formatDuration(timelineStartSec)}</span>
+                  <input
+                    type="range"
+                    min={timelineStartSec}
+                    max={Math.max(timelineStartSec + 0.1, timelineEndSec)}
+                    step={0.01}
+                    value={timelineCursorSec}
+                    onChange={(event) => seekTo(Number(event.target.value))}
+                  />
+                  <span>{formatDuration(timelineEndSec)}</span>
+                </div>
+              </>
+            )}
           </div>
 
-          {loopRange ? (
+          {!isFreePlay && loopRange ? (
             <div className="loopBar">
               <div>
                 <Repeat2 size={17} />
@@ -1167,34 +1371,35 @@ export function App() {
           <div className="instrumentDeck">
             <div className="canvasStage">
               <PracticeCanvas
-                notes={practiceNotes}
-                trackIds={selectedTrackOrder}
-                cursorSec={cursorSec}
-                durationSec={song.durationSec}
+                notes={isFreePlay ? freePlayDisplayNotes : practiceNotes}
+                trackIds={isFreePlay ? [FREE_PLAY_TRACK_ID] : selectedTrackOrder}
+                cursorSec={isFreePlay ? freePlayCursorSec : cursorSec}
+                durationSec={isFreePlay ? Math.max(secondsVisible, freePlayCursorSec + secondsVisible) : songDurationSec}
                 mode={mode}
                 activePitches={activePitches}
-                targetIds={targetIds}
-                completedIds={completedIds}
-                missedIds={missedIds}
+                targetIds={isFreePlay ? EMPTY_ID_SET : targetIds}
+                completedIds={isFreePlay ? EMPTY_ID_SET : completedIds}
+                missedIds={isFreePlay ? EMPTY_ID_SET : missedIds}
                 lowMidi={visibleRange.low}
                 highMidi={visibleRange.high}
                 secondsVisible={secondsVisible}
-                loopRange={loopRange}
+                loopRange={isFreePlay ? undefined : loopRange}
                 noteGlowEnabled={noteGlowEnabled}
-                onLoopRangeSelect={selectLoopRange}
-                onViewportCursorChange={seekCanvasViewport}
+                displayMode={isFreePlay ? "freePlay" : "song"}
+                onLoopRangeSelect={isFreePlay ? undefined : selectLoopRange}
+                onViewportCursorChange={isFreePlay ? undefined : seekCanvasViewport}
               />
-              {isDemoPlaying ? (
+              {!isFreePlay && isDemoPlaying ? (
                 <div className="statusPill demoStatus">Demo playback</div>
-              ) : waiting ? (
+              ) : !isFreePlay && waiting ? (
                 <div className="statusPill">Waiting for {targetCluster?.notes.map((note) => midiToNoteName(note.midi)).join(" + ")}</div>
               ) : null}
-              {countdown ? <div className="countdown">{countdown}</div> : null}
+              {!isFreePlay && countdown ? <div className="countdown">{countdown}</div> : null}
             </div>
 
             <PianoKeyboard
               activePitches={activePitches}
-              targetPitches={targetPitches}
+              targetPitches={isFreePlay ? EMPTY_PITCH_SET : targetPitches}
               lowMidi={visibleRange.low}
               highMidi={visibleRange.high}
               keyboardBaseMidi={keyboardBaseMidi}
@@ -1209,28 +1414,32 @@ export function App() {
               <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
               <strong>{Math.round(volume * 100)}%</strong>
             </label>
-            <div className="bottomStepper">
-              <Gauge size={17} />
-              <span>Speed</span>
-              <strong>{Number(speed.toFixed(2))}x</strong>
-              <button onClick={() => setSpeed((value) => Math.max(0.35, Number((value - 0.05).toFixed(2))))} aria-label="Decrease speed">
-                <Minus size={15} />
-              </button>
-              <button onClick={() => setSpeed((value) => Math.min(1.5, Number((value + 0.05).toFixed(2))))} aria-label="Increase speed">
-                <Plus size={15} />
-              </button>
-            </div>
-            <div className="bottomStepper">
-              <ArrowUpDown size={17} />
-              <span>Transpose</span>
-              <strong>{transpose > 0 ? `+${transpose}` : transpose}</strong>
-              <button onClick={() => setTranspose((value) => Math.max(-12, value - 1))} aria-label="Transpose down">
-                <Minus size={15} />
-              </button>
-              <button onClick={() => setTranspose((value) => Math.min(12, value + 1))} aria-label="Transpose up">
-                <Plus size={15} />
-              </button>
-            </div>
+            {!isFreePlay ? (
+              <>
+                <div className="bottomStepper">
+                  <Gauge size={17} />
+                  <span>Speed</span>
+                  <strong>{Number(speed.toFixed(2))}x</strong>
+                  <button onClick={() => setSpeed((value) => Math.max(0.35, Number((value - 0.05).toFixed(2))))} aria-label="Decrease speed">
+                    <Minus size={15} />
+                  </button>
+                  <button onClick={() => setSpeed((value) => Math.min(1.5, Number((value + 0.05).toFixed(2))))} aria-label="Increase speed">
+                    <Plus size={15} />
+                  </button>
+                </div>
+                <div className="bottomStepper">
+                  <ArrowUpDown size={17} />
+                  <span>Transpose</span>
+                  <strong>{transpose > 0 ? `+${transpose}` : transpose}</strong>
+                  <button onClick={() => setTranspose((value) => Math.max(-12, value - 1))} aria-label="Transpose down">
+                    <Minus size={15} />
+                  </button>
+                  <button onClick={() => setTranspose((value) => Math.min(12, value + 1))} aria-label="Transpose up">
+                    <Plus size={15} />
+                  </button>
+                </div>
+              </>
+            ) : null}
             <label className="bottomToggle">
               <MetronomeIcon />
               <span>Metronome</span>
@@ -1388,6 +1597,12 @@ function dragHasFiles(event: DragEvent<HTMLElement>): boolean {
 
 function firstMidiFile(files: FileList): File | undefined {
   return Array.from(files).find((file) => /\.(mid|midi)$/i.test(file.name));
+}
+
+function pruneFreePlayNotes(notes: FreePlayNote[], cursorSec: number, secondsVisible: number): FreePlayNote[] {
+  const cutoff = cursorSec - secondsVisible - FREE_PLAY_HISTORY_PADDING_SEC - 3;
+  const pruned = notes.filter((note) => note.releasedAtSec === undefined || note.startSec + note.durationSec >= cutoff);
+  return pruned.length > 700 ? pruned.slice(pruned.length - 700) : pruned;
 }
 
 function delay(ms: number): Promise<void> {

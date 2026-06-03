@@ -19,6 +19,7 @@ type PracticeCanvasProps = {
   secondsVisible: number;
   loopRange?: LoopRange;
   noteGlowEnabled?: boolean;
+  displayMode?: "song" | "freePlay";
   onLoopRangeSelect?: (range: LoopRange) => void;
   onViewportCursorChange?: (cursorSec: number) => void;
 };
@@ -57,6 +58,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
   secondsVisible,
   loopRange,
   noteGlowEnabled = true,
+  displayMode = "song",
   onLoopRangeSelect,
   onViewportCursorChange
 }: PracticeCanvasProps) {
@@ -368,11 +370,12 @@ export const PracticeCanvas = memo(function PracticeCanvas({
         draftSelectedNoteIds,
         activeLoopNoteIds,
         noteGlowEnabled,
-        maxNoteDurationSec
+        maxNoteDurationSec,
+        displayMode
       );
       paintNowLine(ctx, width, height, mode);
       paintActiveKeys(ctx, width, height, geometry, activePitches);
-      paintRuler(ctx, width, height, cursorSec, durationSec);
+      paintRuler(ctx, width, height, cursorSec, durationSec, displayMode === "song");
     };
 
     draw();
@@ -388,6 +391,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
     draftLoopRect,
     draftSelectedNoteIds,
     durationSec,
+    displayMode,
     geometry,
     loopRange,
     maxNoteDurationSec,
@@ -565,11 +569,12 @@ function paintNotes(
   draftSelectedNoteIds: Set<string>,
   activeLoopNoteIds: Set<string>,
   noteGlowEnabled: boolean,
-  maxNoteDurationSec: number
+  maxNoteDurationSec: number,
+  displayMode: "song" | "freePlay"
 ) {
   const pxPerSec = height / secondsVisible;
-  const visibleStart = cursorSec - VISIBLE_NOTE_HEADROOM_SEC;
-  const visibleEnd = cursorSec + secondsVisible;
+  const visibleStart = displayMode === "freePlay" ? cursorSec - secondsVisible : cursorSec - VISIBLE_NOTE_HEADROOM_SEC;
+  const visibleEnd = displayMode === "freePlay" ? cursorSec + VISIBLE_NOTE_HEADROOM_SEC : cursorSec + secondsVisible;
 
   getVisibleNotes(notes, visibleStart, visibleEnd, maxNoteDurationSec).forEach((note) => {
     const relativeX = geometry.xByMidi.get(note.midi);
@@ -577,7 +582,11 @@ function paintNotes(
 
     const keyWidth = Math.max(8, (geometry.widthByMidi.get(note.midi) ?? geometry.whiteWidth) * width - 2);
     const x = relativeX * width + 1;
-    const y = height - (note.startSec - cursorSec) * pxPerSec;
+    const noteEndSec = note.startSec + note.durationSec;
+    const y =
+      displayMode === "freePlay"
+        ? height - (cursorSec - noteEndSec) * pxPerSec
+        : height - (note.startSec - cursorSec) * pxPerSec;
     const noteHeight = Math.max(12, note.durationSec * pxPerSec);
     const top = y - noteHeight;
 
@@ -759,13 +768,22 @@ function paintActiveKeys(
   });
 }
 
-function paintRuler(ctx: CanvasRenderingContext2D, width: number, height: number, cursorSec: number, durationSec: number) {
-  ctx.fillStyle = "rgba(5,6,7,0.68)";
-  roundRect(ctx, 14, 14, 144, 34, 8);
-  ctx.fill();
-  ctx.fillStyle = "#f8f7fb";
-  ctx.font = "600 13px Inter, system-ui, sans-serif";
-  ctx.fillText(`${formatClock(cursorSec)} / ${formatClock(durationSec)}`, 28, 36);
+function paintRuler(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  cursorSec: number,
+  durationSec: number,
+  showClock: boolean
+) {
+  if (showClock) {
+    ctx.fillStyle = "rgba(5,6,7,0.68)";
+    roundRect(ctx, 14, 14, 144, 34, 8);
+    ctx.fill();
+    ctx.fillStyle = "#f8f7fb";
+    ctx.font = "600 13px Inter, system-ui, sans-serif";
+    ctx.fillText(`${formatClock(cursorSec)} / ${formatClock(durationSec)}`, 28, 36);
+  }
 
   ctx.fillStyle = "rgba(255,255,255,0.58)";
   ctx.font = "500 11px Inter, system-ui, sans-serif";

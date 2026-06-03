@@ -327,6 +327,39 @@ select:focus-visible {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+.freePlayWelcome {
+  display: grid;
+  gap: 12px;
+  color: #e9e2f2;
+  line-height: 1.45;
+}
+
+.freePlayWelcome p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.freePlayWelcome ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 9px;
+  color: #dcd4e8;
+  font-size: 0.86rem;
+}
+
+.freePlayWelcome li::marker {
+  color: var(--accent);
+}
+
+.emptyPanelNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
 .songSearchPanel {
   min-height: 0;
   max-height: calc(100% - 174px);
@@ -580,6 +613,10 @@ select:focus-visible {
   gap: 16px;
 }
 
+.transportTop.freePlayTop {
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+}
+
 .transportSong {
   min-width: 0;
   display: grid;
@@ -593,6 +630,12 @@ select:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.transportSong small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.25;
 }
 
 .transportControls {
@@ -1110,6 +1153,12 @@ input[type="range"] {
 
 .toggleRow {
   justify-content: flex-start;
+}
+
+.toggleRow em {
+  color: rgba(215, 209, 223, 0.58);
+  font-size: 0.78rem;
+  font-style: italic;
 }
 
 .accentChooser {
