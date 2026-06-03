@@ -16,6 +16,7 @@ type PlayNoteOptions = {
 };
 
 const MAX_AUDIO_VOICES = 32;
+const PIANO_MAX_POLYPHONY = 48;
 const MAX_SUSTAIN_MS = 14000;
 
 class AudioEngine {
@@ -23,6 +24,8 @@ class AudioEngine {
   private piano?: PianoInstance;
   private fallback?: Tone.PolySynth;
   private voices = new SustainVoiceManager(MAX_AUDIO_VOICES, MAX_SUSTAIN_MS);
+  private metronomeTimers = new Set<number>();
+  private activeMetronomeNotes = new Set<string>();
   private volume = 0.82;
   status: "idle" | "loading" | "ready" | "fallback" | "error" = "idle";
 
@@ -45,12 +48,43 @@ class AudioEngine {
     this.applyActions(this.voices.noteOff(midi, this.nowMs()));
   }
 
-  async playMetronomeTick(midi: number, velocity = 0.9, durationMs = 100): Promise<void> {
+  async playMetronomeTick(midi: number, velocity = 0.9, durationMs = 100, startDelaySec = 0): Promise<void> {
     await this.ensureReady();
+    this.scheduleMetronomeTick(midi, velocity, durationMs, startDelaySec);
+  }
+
+  scheduleMetronomeTick(midi: number, velocity = 0.9, durationMs = 100, startDelaySec = 0): void {
     const normalizedVelocity = Math.min(1, Math.max(0.08, velocity));
     const note = midiToNoteName(midi);
-    this.attackNote(note, normalizedVelocity);
-    window.setTimeout(() => this.releaseNote(note), Math.max(30, durationMs));
+    const delayMs = Math.max(0, startDelaySec * 1000);
+    const playTick = () => {
+      this.attackNote(note, normalizedVelocity);
+      this.activeMetronomeNotes.add(note);
+      const releaseTimer = window.setTimeout(() => {
+        this.metronomeTimers.delete(releaseTimer);
+        this.activeMetronomeNotes.delete(note);
+        this.releaseNote(note);
+      }, Math.max(30, durationMs));
+      this.metronomeTimers.add(releaseTimer);
+    };
+
+    if (delayMs <= 4) {
+      playTick();
+      return;
+    }
+
+    const startTimer = window.setTimeout(() => {
+      this.metronomeTimers.delete(startTimer);
+      playTick();
+    }, delayMs);
+    this.metronomeTimers.add(startTimer);
+  }
+
+  stopMetronomeTicks(): void {
+    this.metronomeTimers.forEach((timer) => window.clearTimeout(timer));
+    this.metronomeTimers.clear();
+    this.activeMetronomeNotes.forEach((note) => this.releaseNote(note));
+    this.activeMetronomeNotes.clear();
   }
 
   allNotesOff(): void {
@@ -123,7 +157,7 @@ class AudioEngine {
       const module = (await import("@tonejs/piano/build/piano/Piano.js")) as unknown as {
         Piano: new (options?: unknown) => PianoInstance;
       };
-      const piano = new module.Piano({ velocities: 4, maxPolyphony: MAX_AUDIO_VOICES });
+      const piano = new module.Piano({ velocities: 4, maxPolyphony: PIANO_MAX_POLYPHONY });
       piano.toDestination?.();
       await piano.load?.();
       this.piano = piano;

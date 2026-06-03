@@ -136,6 +136,9 @@ export function App() {
   const loopRangeRef = useSyncedRef(loopRange);
   const isFreePlayRef = useSyncedRef(isFreePlay);
   const freePlayCursorRef = useSyncedRef(freePlayCursorSec);
+  const metronomeBpmRef = useSyncedRef(metronomeBpm);
+  const metronomeVolumeRef = useSyncedRef(metronomeVolume);
+  const sustainPedalRef = useSyncedRef(sustainPedal);
   const heldPitchesRef = useRef<Set<number>>(new Set());
   const recentPitchTouchesRef = useRef<Map<number, RecentPitchTouch>>(new Map());
   const demoStartedIdsRef = useRef<Set<string>>(new Set());
@@ -221,16 +224,20 @@ export function App() {
     demoPitchCountsRef.current.clear();
   }, []);
 
+  const allNotesOffPreservingSustain = useCallback(() => {
+    audioEngine.allNotesOff();
+    if (sustainPedalRef.current) audioEngine.pedalDown();
+  }, [sustainPedalRef]);
+
   const stopDemoPlayback = useCallback(() => {
     setIsDemoPlaying(false);
     demoStartedIdsRef.current.clear();
     heldPitchesRef.current.clear();
     recentPitchTouchesRef.current.clear();
     clearDemoTimers();
-    audioEngine.allNotesOff();
-    setSustainPedal(false);
+    allNotesOffPreservingSustain();
     setActivePitches(new Set());
-  }, [clearDemoTimers]);
+  }, [allNotesOffPreservingSustain, clearDemoTimers]);
 
   const clearInputMemory = useCallback(() => {
     heldPitchesRef.current.clear();
@@ -241,8 +248,7 @@ export function App() {
     demoStartedIdsRef.current.clear();
     clearDemoTimers();
     clearInputMemory();
-    audioEngine.allNotesOff();
-    setSustainPedal(false);
+    allNotesOffPreservingSustain();
     setActivePitches(new Set());
     setWaiting(false);
     setCountdown(0);
@@ -250,7 +256,7 @@ export function App() {
     setMissedIds(new Set());
     setStats(EMPTY_STATS);
     metronomeBeatRef.current = -1;
-  }, [clearDemoTimers, clearInputMemory]);
+  }, [allNotesOffPreservingSustain, clearDemoTimers, clearInputMemory]);
 
   const restartPracticeSequence = useCallback(
     (options: { keepTransport?: boolean; range?: LoopRange | null } = {}) => {
@@ -706,19 +712,62 @@ export function App() {
   ]);
 
   useEffect(() => {
-    const metronomeIsRunning = isFreePlay || isPlaying || isDemoPlaying;
-    if (!metronome || !metronomeIsRunning) return;
-    const metronomeCursorSec = isFreePlay ? freePlayCursorSec : cursorSec;
-    const beatLength = 60 / metronomeBpm;
-    const beat = Math.floor(metronomeCursorSec / beatLength);
-    if (beat < 0 || beat === metronomeBeatRef.current) return;
-    metronomeBeatRef.current = beat;
-    const pitch = beat % 4 === 0 ? 96 : 84;
+    if (!metronome) {
+      audioEngine.stopMetronomeTicks();
+      return;
+    }
+
+    let timer = 0;
+    let cancelled = false;
+    let beatIndex = 0;
+    let nextBeatAtMs = performance.now() + 50;
+    const lookaheadMs = 160;
+    const schedulerMs = 35;
+
+    const schedule = () => {
+      if (cancelled) return;
+
+      const nowMs = performance.now();
+      const beatMs = 60000 / metronomeBpmRef.current;
+      if (nextBeatAtMs < nowMs - 20) {
+        const missedBeats = Math.floor((nowMs - nextBeatAtMs) / beatMs);
+        beatIndex += Math.max(0, missedBeats);
+        nextBeatAtMs += Math.max(0, missedBeats) * beatMs;
+      }
+
+      let scheduledThisPass = 0;
+      while (nextBeatAtMs <= nowMs + lookaheadMs) {
+        const isAccent = beatIndex % 4 === 0;
+        const pitch = isAccent ? 96 : 84;
+        const startDelaySec = Math.max(0, (nextBeatAtMs - nowMs) / 1000);
+        const tickVolume = metronomeVolumeRef.current;
+
+        audioEngine.scheduleMetronomeTick(pitch, isAccent ? tickVolume : tickVolume * 0.74, 110, startDelaySec);
+
+        beatIndex += 1;
+        scheduledThisPass += 1;
+        nextBeatAtMs += beatMs;
+
+        if (scheduledThisPass > 12) break;
+      }
+
+      timer = window.setTimeout(schedule, schedulerMs);
+    };
+
     void audioEngine
-      .playMetronomeTick(pitch, beat % 4 === 0 ? metronomeVolume : metronomeVolume * 0.74, 110)
+      .ensureReady()
       .catch(() => undefined)
-      .finally(() => setAudioStatus(audioEngine.status));
-  }, [cursorSec, freePlayCursorSec, isDemoPlaying, isFreePlay, isPlaying, metronome, metronomeBpm, metronomeVolume]);
+      .finally(() => {
+        setAudioStatus(audioEngine.status);
+        if (!cancelled) schedule();
+      });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      audioEngine.stopMetronomeTicks();
+    };
+  }, [metronome, metronomeBpmRef, metronomeVolumeRef]);
 
   const doSearch = useCallback(async () => {
     const trimmedQuery = query.trim();
