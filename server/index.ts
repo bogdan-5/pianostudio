@@ -62,7 +62,7 @@ app.get("/api/search", async (req, res) => {
 
   if (!query) {
     const response: SearchResponse = {
-      results: PUBLIC_DOMAIN_PIECES,
+      results: [],
       source,
       query,
       page
@@ -90,12 +90,11 @@ app.get("/api/search", async (req, res) => {
     return;
   }
 
-  const providers = source === "all" ? ["bitmidi", "midishare", "mutopia"] : [source];
+  const providers = source === "all" ? ["bitmidi", "mutopia"] : [source];
   const chunks = await Promise.all(
     providers.map(async (provider) => {
       try {
         if (provider === "bitmidi") return await searchBitMidi(query, page);
-        if (provider === "midishare") return await searchMidishare(query);
         if (provider === "mutopia") return searchMutopia(query);
         return [];
       } catch (error) {
@@ -153,7 +152,7 @@ app.listen(PORT, "127.0.0.1", () => {
 
 function normalizeSource(value: unknown): SongSource | "all" {
   const source = String(value ?? "all").toLowerCase();
-  if (source === "bitmidi" || source === "midishare" || source === "mutopia" || source === "direct") {
+  if (source === "bitmidi" || source === "mutopia" || source === "direct") {
     return source;
   }
   return "all";
@@ -190,46 +189,6 @@ async function searchBitMidi(query: string, page: number): Promise<SongSearchRes
   return results.slice(0, 24);
 }
 
-async function searchMidishare(query: string): Promise<SongSearchResult[]> {
-  const json = await fetchJson("https://midishare.dev/api/midis");
-  const rawItems = Array.isArray(json)
-    ? json
-    : Array.isArray(json?.midis)
-      ? json.midis
-      : Array.isArray(json?.data)
-        ? json.data
-        : Array.isArray(json?.results)
-          ? json.results
-          : [];
-  const needle = query.toLowerCase();
-
-  return rawItems
-    .map((item: any): SongSearchResult | undefined => {
-      const id = String(item.id ?? item._id ?? item.hash ?? item.slug ?? "").trim();
-      const title = String(item.title ?? item.name ?? item.fileName ?? item.filename ?? "").trim();
-      if (!id || !title) return undefined;
-
-      const artist = String(item.artist ?? item.composer ?? item.author ?? "").trim() || undefined;
-      const haystack = `${title} ${artist ?? ""}`.toLowerCase();
-      if (!haystack.includes(needle)) return undefined;
-
-      const duration = Number(item.duration ?? item.durationSec ?? item.length);
-
-      return {
-        id,
-        source: "midishare",
-        title,
-        artist,
-        durationSec: Number.isFinite(duration) ? duration : undefined,
-        difficulty: item.difficulty ? String(item.difficulty) : undefined,
-        licenseLabel: "Public-domain collection",
-        detailUrl: `https://midishare.dev/detail/${id}`
-      };
-    })
-    .filter(Boolean)
-    .slice(0, 24) as SongSearchResult[];
-}
-
 function searchMutopia(query: string): SongSearchResult[] {
   const needle = query.toLowerCase();
   return PUBLIC_DOMAIN_PIECES.filter((piece) =>
@@ -245,11 +204,6 @@ async function resolveMidiUrl(source: SongSource | "all", id: string, directUrl:
 
   if (directUrl && isMidiUrl(directUrl)) {
     return validateRemoteMidiUrl(directUrl);
-  }
-
-  if (source === "midishare") {
-    if (!id) throw new Error("Missing Midishare id");
-    return `https://midishare.dev/api/midi?id=${encodeURIComponent(id)}&format=mid`;
   }
 
   if (source === "bitmidi") {
@@ -308,18 +262,6 @@ async function fetchText(url: string): Promise<string> {
 
   if (!response.ok) throw new Error(`request failed (${response.status})`);
   return response.text();
-}
-
-async function fetchJson(url: string): Promise<any> {
-  const response = await fetch(url, {
-    headers: {
-      "user-agent": USER_AGENT,
-      accept: "application/json,text/plain,*/*"
-    }
-  });
-
-  if (!response.ok) throw new Error(`request failed (${response.status})`);
-  return response.json();
 }
 
 function isMidiUrl(value: string): boolean {

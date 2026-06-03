@@ -53,7 +53,6 @@ import {
 } from "../shared/music";
 
 const EMPTY_STATS: PracticeStats = { correct: 0, wrong: 0, missed: 0, streak: 0 };
-const RECENT_KEY = "piano-learning-recent-songs";
 type SidePanelTab = "songs" | "tracks" | "controls" | "stats";
 
 export function App() {
@@ -63,7 +62,6 @@ export function App() {
   const [query, setQuery] = useState("moonlight sonata");
   const [source, setSource] = useState("all");
   const [results, setResults] = useState<SongSearchResult[]>([]);
-  const [recent, setRecent] = useState<SongSearchResult[]>(() => loadRecentSongs());
   const [searchError, setSearchError] = useState("");
   const [searching, setSearching] = useState(false);
   const [loadingSong, setLoadingSong] = useState("");
@@ -492,10 +490,17 @@ export function App() {
   }, [cursorSec, isDemoPlaying, isPlaying, metronome, song.bpm]);
 
   const doSearch = useCallback(async () => {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      setResults([]);
+      setSearchError("");
+      return;
+    }
+
     setSearching(true);
     setSearchError("");
     try {
-      const response = await searchSongs(query, source);
+      const response = await searchSongs(trimmedQuery, source);
       setResults(response.results);
       setSearchError(response.errors?.join(" | ") ?? "");
     } catch (error) {
@@ -537,7 +542,6 @@ export function App() {
           source: result.source
         });
         loadSong(parsed);
-        rememberSong(result, setRecent);
       } catch (error) {
         setSearchError(error instanceof Error ? error.message : "Could not load song");
       } finally {
@@ -774,10 +778,10 @@ export function App() {
               </button>
             </div>
 
-            <div className="sidePanelBody">
+            <div className={`sidePanelBody ${activeSidePanel === "songs" ? "songsPanelHost" : ""}`}>
               {activeSidePanel === "songs" ? (
-                <>
-                  <section className="panelBlock">
+                <div className="songsPanelBody">
+                  <section className="panelBlock songSearchPanel">
                     <div className="panelTitle">
                       <Search size={18} />
                       <h2>Song Search</h2>
@@ -797,7 +801,6 @@ export function App() {
                       <select value={source} onChange={(event) => setSource(event.target.value)} aria-label="Search source">
                         <option value="all">All</option>
                         <option value="bitmidi">BitMidi</option>
-                        <option value="midishare">Midishare</option>
                         <option value="mutopia">Public Domain</option>
                       </select>
                       <button type="submit" disabled={searching}>
@@ -806,7 +809,7 @@ export function App() {
                     </form>
                     {searchError ? <p className="inlineWarning">{searchError}</p> : null}
                     <div className="resultList">
-                      {(results.length ? results : recent).map((result) => (
+                      {results.map((result) => (
                         <button
                           className="resultItem"
                           key={`${result.source}-${result.id}`}
@@ -823,7 +826,7 @@ export function App() {
                     </div>
                   </section>
 
-                  <section className="panelBlock">
+                  <section className="panelBlock importPanel">
                     <div className="panelTitle">
                       <Upload size={18} />
                       <h2>Import</h2>
@@ -834,7 +837,7 @@ export function App() {
                       <input type="file" accept=".mid,.midi,audio/midi" onChange={(event) => void onUpload(event.target.files?.[0])} />
                     </label>
                   </section>
-                </>
+                </div>
               ) : null}
 
               {activeSidePanel === "tracks" ? (
@@ -1139,19 +1142,3 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function loadRecentSongs(): SongSearchResult[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.slice(0, 5) : [];
-  } catch {
-    return [];
-  }
-}
-
-function rememberSong(result: SongSearchResult, setRecent: (updater: (current: SongSearchResult[]) => SongSearchResult[]) => void) {
-  setRecent((current) => {
-    const next = [result, ...current.filter((item) => `${item.source}:${item.id}` !== `${result.source}:${result.id}`)].slice(0, 5);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-    return next;
-  });
-}

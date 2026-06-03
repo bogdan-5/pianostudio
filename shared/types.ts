@@ -5,7 +5,7 @@ export type LoopRange = {
   endSec: number;
 };
 
-export type SongSource = "bitmidi" | "midishare" | "mutopia" | "direct";
+export type SongSource = "bitmidi" | "mutopia" | "direct";
 
 export type SongSearchResult = {
   id: string;

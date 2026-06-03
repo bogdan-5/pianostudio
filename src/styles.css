@@ -198,9 +198,22 @@ button {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
   min-height: 0;
   overflow: auto;
   scrollbar-width: thin;
+}
+
+.sidePanelBody.songsPanelHost {
+  overflow: hidden;
+}
+
+.songsPanelBody {
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
 }
 
 .panelBlock {
@@ -209,6 +222,17 @@ button {
   background: rgba(8, 13, 27, 0.74);
   backdrop-filter: blur(18px);
   padding: 13px;
+}
+
+.songSearchPanel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.importPanel {
+  align-self: end;
+  width: 100%;
 }
 
 .panelTitle {
@@ -274,6 +298,13 @@ button {
   flex-direction: column;
   gap: 8px;
   margin-top: 11px;
+}
+
+.songSearchPanel .resultList {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 3px;
+  scrollbar-width: thin;
 }
 
 .resultItem {
