@@ -500,6 +500,20 @@ select:focus-visible {
   background: rgba(var(--accent-rgb), 0.08);
 }
 
+.uploadTarget.dragging {
+  border-color: rgba(var(--accent-rgb), 0.94);
+  background:
+    radial-gradient(circle at 50% 35%, rgba(var(--accent-rgb), 0.22), transparent 54%),
+    rgba(var(--accent-rgb), 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--accent-rgb), 0.26),
+    0 0 26px rgba(var(--accent-rgb), 0.2);
+}
+
+.uploadTarget.dragging svg {
+  filter: drop-shadow(0 0 12px rgba(var(--accent-rgb), 0.58));
+}
+
 .uploadTarget svg {
   color: var(--accent);
 }

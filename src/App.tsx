@@ -25,7 +25,7 @@ import {
   X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, DragEvent } from "react";
 import type { MidiInputEvent } from "./hooks/useWebMidi";
 import { useWebMidi } from "./hooks/useWebMidi";
 import { audioEngine } from "./lib/audioEngine";
@@ -86,6 +86,7 @@ export function App() {
   const [searchError, setSearchError] = useState("");
   const [searching, setSearching] = useState(false);
   const [loadingSong, setLoadingSong] = useState("");
+  const [uploadDragging, setUploadDragging] = useState(false);
   const [mode, setMode] = useState<PracticeMode>("wait");
   const [isPlaying, setIsPlaying] = useState(false);
   const [isDemoPlaying, setIsDemoPlaying] = useState(false);
@@ -124,6 +125,7 @@ export function App() {
   const demoStartedIdsRef = useRef<Set<string>>(new Set());
   const demoPitchCountsRef = useRef<Map<number, number>>(new Map());
   const demoStopTimersRef = useRef<number[]>([]);
+  const uploadDragDepthRef = useRef(0);
 
   const practiceNotes = useMemo(() => {
     return filterSongNotes(song, selectedTrackIds)
@@ -752,6 +754,46 @@ export function App() {
     [loadSong]
   );
 
+  const handleUploadDragEnter = useCallback((event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!dragHasFiles(event)) return;
+    uploadDragDepthRef.current += 1;
+    event.dataTransfer.dropEffect = "copy";
+    setUploadDragging(true);
+  }, []);
+
+  const handleUploadDragOver = useCallback((event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (dragHasFiles(event)) event.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const handleUploadDragLeave = useCallback((event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    uploadDragDepthRef.current = Math.max(0, uploadDragDepthRef.current - 1);
+    if (uploadDragDepthRef.current === 0) setUploadDragging(false);
+  }, []);
+
+  const handleUploadDrop = useCallback(
+    (event: DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      uploadDragDepthRef.current = 0;
+      setUploadDragging(false);
+
+      const file = firstMidiFile(event.dataTransfer.files);
+      if (!file) {
+        setSearchError("Drop a .mid or .midi file to import.");
+        return;
+      }
+
+      void onUpload(file);
+    },
+    [onUpload]
+  );
+
   const toggleTrack = useCallback((trackId: string) => {
     setSelectedTrackIds((current) => {
       if (current.includes(trackId) && current.length > 1) return current.filter((id) => id !== trackId);
@@ -886,13 +928,26 @@ export function App() {
                       <Upload size={18} />
                       <h2>Import</h2>
                     </div>
-                    <label className="uploadTarget">
+                    <label
+                      className={`uploadTarget ${uploadDragging ? "dragging" : ""}`}
+                      onDragEnter={handleUploadDragEnter}
+                      onDragOver={handleUploadDragOver}
+                      onDragLeave={handleUploadDragLeave}
+                      onDrop={handleUploadDrop}
+                    >
                       <Upload size={19} />
                       <span>
                         <strong>{loadingSong && !results.some((result) => result.id === loadingSong) ? "Loading..." : "Choose MIDI file"}</strong>
                         <small>or drag and drop .mid / .midi</small>
                       </span>
-                      <input type="file" accept=".mid,.midi,audio/midi" onChange={(event) => void onUpload(event.target.files?.[0])} />
+                      <input
+                        type="file"
+                        accept=".mid,.midi,audio/midi"
+                        onChange={(event) => {
+                          void onUpload(event.target.files?.[0]);
+                          event.currentTarget.value = "";
+                        }}
+                      />
                     </label>
                   </section>
                 </div>
@@ -1325,6 +1380,14 @@ function isEditableTarget(target: EventTarget | null): boolean {
   const element = target as HTMLElement | null;
   if (!element) return false;
   return ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName) || element.isContentEditable;
+}
+
+function dragHasFiles(event: DragEvent<HTMLElement>): boolean {
+  return Array.from(event.dataTransfer.types).includes("Files");
+}
+
+function firstMidiFile(files: FileList): File | undefined {
+  return Array.from(files).find((file) => /\.(mid|midi)$/i.test(file.name));
 }
 
 function delay(ms: number): Promise<void> {
