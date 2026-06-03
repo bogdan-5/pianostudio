@@ -7,9 +7,9 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --accent: #a855f7;
-  --accent-rgb: 168, 85, 247;
-  --accent-dark: #6d28d9;
+  --accent: #f6c453;
+  --accent-rgb: 246, 196, 83;
+  --accent-dark: #b7791f;
   --surface: rgba(10, 12, 18, 0.86);
   --surface-strong: rgba(15, 17, 24, 0.96);
   --surface-soft: rgba(18, 20, 30, 0.7);
@@ -77,50 +77,47 @@ select:focus-visible {
 }
 
 .brandLockup {
+  padding-left: 2em;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 12px;
 }
 
 .appMark {
-  width: 44px;
-  height: 44px;
-  border: 1px solid rgba(var(--accent-rgb), 0.42);
-  border-radius: 8px;
+  width: 56px;
+  height: 56px;
   display: grid;
   place-items: center;
   color: var(--accent);
-  background:
-    radial-gradient(circle, rgba(var(--accent-rgb), 0.24), transparent 64%),
-    rgba(11, 12, 17, 0.84);
-  box-shadow:
-    0 0 26px rgba(var(--accent-rgb), 0.22),
-    inset 0 0 20px rgba(var(--accent-rgb), 0.09);
+  filter: drop-shadow(0 0 16px rgba(var(--accent-rgb), 0.42));
+  flex: 0 0 auto;
+}
+
+.logo {
+  width: 50px;
+  height: 50px;
+  display: block;
 }
 
 .brandText {
   min-width: 0;
+  padding: 1em;
 }
 
 .topBar h1 {
-  margin: 3px 0 0;
-  font-size: clamp(1.05rem, 1.65vw, 1.45rem);
-  line-height: 1.18;
+  margin: 0;
+  color: var(--accent);
+  font-family: "Palatino Linotype", Palatino, Georgia, Cambria, "Times New Roman", serif;
+  font-size: clamp(1.55rem, 2.05vw, 2.2rem);
+  font-weight: 700;
+  line-height: 0.95;
   letter-spacing: 0;
-  max-width: min(56vw, 760px);
+  max-width: 340px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.eyebrow {
-  margin: 0;
-  color: var(--accent);
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0;
+  text-shadow: 0 0 18px rgba(var(--accent-rgb), 0.28);
 }
 
 .topActions {
@@ -160,6 +157,7 @@ select:focus-visible {
 }
 
 .iconTextButton {
+  position: relative;
   padding: 0 14px;
   display: inline-flex;
   align-items: center;
@@ -169,6 +167,16 @@ select:focus-visible {
 
 .iconTextButton svg {
   color: var(--accent);
+}
+
+.midiStatusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #2ee59d;
+  box-shadow:
+    0 0 0 3px rgba(46, 229, 157, 0.12),
+    0 0 14px rgba(46, 229, 157, 0.78);
 }
 
 .deviceSelect {
@@ -314,8 +322,8 @@ select:focus-visible {
 .songsPanelBody {
   min-height: 0;
   height: 100%;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -331,12 +339,17 @@ select:focus-visible {
 
 .songSearchPanel {
   min-height: 0;
+  max-height: calc(100% - 174px);
   display: flex;
+  flex: 0 1 auto;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .importPanel {
   align-self: end;
+  flex: 0 0 auto;
+  margin-top: auto;
   width: 100%;
 }
 
@@ -421,6 +434,7 @@ select:focus-visible {
 }
 
 .songSearchPanel .resultList {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding-right: 3px;
@@ -560,9 +574,24 @@ select:focus-visible {
 
 .transportTop {
   display: grid;
-  grid-template-columns: minmax(330px, 1fr) auto auto;
+  grid-template-columns: auto minmax(180px, 1fr) auto auto;
   align-items: center;
   gap: 16px;
+}
+
+.transportSong {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.transportSong strong {
+  color: #fff;
+  font-size: 1.4rem;
+  line-height: 1.14;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .transportControls {
@@ -701,7 +730,7 @@ select:focus-visible {
   gap: 10px;
 }
 
-.loopBar > div {
+.loopBar>div {
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -957,7 +986,8 @@ input[type="range"] {
 
 .utilityChip svg,
 .bottomSlider svg,
-.bottomStepper svg {
+.bottomStepper svg,
+.bottomToggle svg {
   color: var(--accent);
 }
 
@@ -988,13 +1018,22 @@ input[type="range"] {
 }
 
 .bottomToggle {
-  margin-left: auto;
   padding: 0 12px;
 }
 
 .bottomToggle input {
   width: 34px;
   height: 18px;
+}
+
+.metronomeIcon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .statsBlock {
@@ -1057,7 +1096,7 @@ input[type="range"] {
   color: #fff;
 }
 
-.stepperRow > div {
+.stepperRow>div {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1083,7 +1122,7 @@ input[type="range"] {
   gap: 8px;
 }
 
-.accentChooser > div {
+.accentChooser>div {
   display: flex;
   gap: 8px;
 }
@@ -1128,6 +1167,10 @@ input[type="range"] {
 
   .transportTop {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .transportSong {
+    grid-column: 1 / -1;
   }
 
   .transportReadout {
@@ -1227,7 +1270,7 @@ input[type="range"] {
     flex-direction: column;
   }
 
-  .loopBar > div:last-child {
+  .loopBar>div:last-child {
     display: grid;
     grid-template-columns: 1fr 1fr;
   }

@@ -1,9 +1,9 @@
 import {
+  ArrowUpDown,
   Cable,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CircleStop,
   Gauge,
   Headphones,
   Keyboard,
@@ -21,7 +21,7 @@ import {
   Search,
   Settings,
   SlidersHorizontal,
-  Sparkles,
+  Square,
   Upload,
   Volume2,
   X
@@ -63,7 +63,8 @@ const EMPTY_STATS: PracticeStats = { correct: 0, wrong: 0, missed: 0, streak: 0 
 type SidePanelTab = "songs" | "tracks" | "controls" | "stats";
 type AccentThemeId = "purple" | "teal" | "gold" | "blue" | "pink";
 
-const ACCENT_KEY = "piano-learning-accent-theme";
+const DEFAULT_ACCENT_THEME: AccentThemeId = "gold";
+const ACCENT_KEY = "piano-studio-accent-theme";
 const ACCENT_THEMES: Array<{
   id: AccentThemeId;
   label: string;
@@ -71,18 +72,18 @@ const ACCENT_THEMES: Array<{
   rgb: string;
   dark: string;
 }> = [
-  { id: "purple", label: "Purple", color: "#a855f7", rgb: "168, 85, 247", dark: "#6d28d9" },
-  { id: "teal", label: "Teal", color: "#34d399", rgb: "52, 211, 153", dark: "#047857" },
-  { id: "gold", label: "Gold", color: "#f6c453", rgb: "246, 196, 83", dark: "#b7791f" },
-  { id: "blue", label: "Blue", color: "#38bdf8", rgb: "56, 189, 248", dark: "#0369a1" },
-  { id: "pink", label: "Pink", color: "#fb7185", rgb: "251, 113, 133", dark: "#be123c" }
-];
+    { id: "gold", label: "Yellow", color: "#f6c453", rgb: "246, 196, 83", dark: "#b7791f" },
+    { id: "purple", label: "Purple", color: "#a855f7", rgb: "168, 85, 247", dark: "#6d28d9" },
+    { id: "teal", label: "Teal", color: "#34d399", rgb: "52, 211, 153", dark: "#047857" },
+    { id: "blue", label: "Blue", color: "#38bdf8", rgb: "56, 189, 248", dark: "#0369a1" },
+    { id: "pink", label: "Pink", color: "#fb7185", rgb: "251, 113, 133", dark: "#be123c" }
+  ];
 
 export function App() {
   const starterSong = useMemo(() => createBuiltInLesson(), []);
   const [song, setSong] = useState<NormalizedSong>(starterSong);
   const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>(starterSong.tracks.map((track) => track.id));
-  const [query, setQuery] = useState("moonlight sonata");
+  const [query, setQuery] = useState("");
   const [source, setSource] = useState("all");
   const [results, setResults] = useState<SongSearchResult[]>([]);
   const [searchError, setSearchError] = useState("");
@@ -754,16 +755,16 @@ export function App() {
     <div className="appShell" style={accentStyle}>
       <header className="topBar">
         <div className="brandLockup">
-          <div className="appMark" aria-hidden="true">
-            <Sparkles size={28} />
+          <div className="appMark">
+            <AppLogo />
           </div>
           <div className="brandText">
-            <p className="eyebrow">Piano Practice Studio</p>
-            <h1>{song.title}</h1>
+            <h1>PIANO STUDIO</h1>
           </div>
         </div>
         <div className="topActions">
           <button className="iconTextButton" onClick={midi.connect} disabled={midi.permissionState === "connecting"}>
+            {midi.permissionState === "ready" ? <span className="midiStatusDot" aria-hidden="true" /> : null}
             <Cable size={18} />
             {midi.permissionState === "ready" ? "MIDI Ready" : midi.permissionState === "unsupported" ? "No Web MIDI" : "Connect MIDI"}
           </button>
@@ -783,7 +784,14 @@ export function App() {
               <option value="">No device selected</option>
             )}
           </select>
-          <button className="settingsButton" aria-label="Settings" onClick={() => setActiveSidePanel("controls")}>
+          <button
+            className="settingsButton"
+            aria-label="Settings"
+            onClick={() => {
+              setSidePanelOpen(true);
+              setActiveSidePanel("controls");
+            }}
+          >
             <Settings size={18} />
           </button>
         </div>
@@ -794,7 +802,7 @@ export function App() {
           <aside className="sidePanel">
             <div className="sidePanelTop">
               <div className="sidePanelTitle">
-                <Sparkles size={18} />
+                <Music2 size={18} />
                 <span>Studio</span>
               </div>
               <button className="collapseButton" onClick={() => setSidePanelOpen(false)} aria-label="Hide side panel">
@@ -803,34 +811,34 @@ export function App() {
             </div>
 
             <div className="sideTabs" role="tablist" aria-label="Practice panels">
-                <button
-                  className={activeSidePanel === "songs" ? "selected" : ""}
-                  onClick={() => setActiveSidePanel("songs")}
-                >
-                  <Search size={16} />
-                  Songs
-                </button>
-                <button
-                  className={activeSidePanel === "tracks" ? "selected" : ""}
-                  onClick={() => setActiveSidePanel("tracks")}
-                >
-                  <ListMusic size={16} />
-                  Tracks
-                </button>
-                <button
-                  className={activeSidePanel === "controls" ? "selected" : ""}
-                  onClick={() => setActiveSidePanel("controls")}
-                >
-                  <SlidersHorizontal size={16} />
-                  Controls
-                </button>
-                <button
-                  className={activeSidePanel === "stats" ? "selected" : ""}
-                  onClick={() => setActiveSidePanel("stats")}
-                >
-                  <Keyboard size={16} />
-                  Status
-                </button>
+              <button
+                className={activeSidePanel === "songs" ? "selected" : ""}
+                onClick={() => setActiveSidePanel("songs")}
+              >
+                <Search size={16} />
+                Songs
+              </button>
+              <button
+                className={activeSidePanel === "tracks" ? "selected" : ""}
+                onClick={() => setActiveSidePanel("tracks")}
+              >
+                <ListMusic size={16} />
+                Tracks
+              </button>
+              <button
+                className={activeSidePanel === "controls" ? "selected" : ""}
+                onClick={() => setActiveSidePanel("controls")}
+              >
+                <SlidersHorizontal size={16} />
+                Controls
+              </button>
+              <button
+                className={activeSidePanel === "stats" ? "selected" : ""}
+                onClick={() => setActiveSidePanel("stats")}
+              >
+                <Keyboard size={16} />
+                Status
+              </button>
             </div>
 
             <div className={`sidePanelBody ${activeSidePanel === "songs" ? "songsPanelHost" : ""}`}>
@@ -1031,7 +1039,7 @@ export function App() {
                   {isPlaying ? <Pause size={24} /> : <Play size={24} />}
                 </button>
                 <button className="roundButton" onClick={stopTransport} aria-label="Stop">
-                  <CircleStop size={19} />
+                  <Square size={18} fill="currentColor" />
                 </button>
                 <button className="roundButton" onClick={() => resetPractice()} aria-label="Restart">
                   <RefreshCw size={18} />
@@ -1045,6 +1053,10 @@ export function App() {
                   {isDemoPlaying ? <Pause size={16} /> : <Music2 size={16} />}
                   <span>{isDemoPlaying ? "Stop" : "Demo"}</span>
                 </button>
+              </div>
+
+              <div className="transportSong">
+                <strong>{song.title}</strong>
               </div>
 
               <div className="transportReadout">
@@ -1161,6 +1173,7 @@ export function App() {
               </button>
             </div>
             <div className="bottomStepper">
+              <ArrowUpDown size={17} />
               <span>Transpose</span>
               <strong>{transpose > 0 ? `+${transpose}` : transpose}</strong>
               <button onClick={() => setTranspose((value) => Math.max(-12, value - 1))} aria-label="Transpose down">
@@ -1171,6 +1184,7 @@ export function App() {
               </button>
             </div>
             <label className="bottomToggle">
+              <MetronomeIcon />
               <span>Metronome</span>
               <input type="checkbox" checked={metronome} onChange={(event) => setMetronome(event.target.checked)} />
             </label>
@@ -1178,6 +1192,44 @@ export function App() {
         </section>
       </main>
     </div>
+  );
+}
+
+function MetronomeIcon() {
+  return (
+    <svg className="metronomeIcon" viewBox="0 0 24 24" role="img" aria-label="Metronome" aria-hidden="true">
+      <path d="M8.5 3.5h7l3 16h-13l3-16Z" />
+      <path d="M12 5.3v8.2" />
+      <path d="M12 13.5l4.2-5.2" />
+      <path d="M7.4 19.5h9.2" />
+      <path d="M10 16h4" />
+    </svg>
+  );
+}
+
+function AppLogo() {
+  return (
+    <svg className="logo" viewBox="-128 -128 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Logo">
+      <g
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      >
+        <path d="M 0 -24 L 24 0 L 0 24 L -24 0 Z" />
+        <g id="logo-arm">
+          <path d="M 0 -114 L 42 -60 L 0 -24 L -42 -60 Z" />
+          <path d="M 0 -114 L 0 -24" />
+          <path d="M -42 -60 L 42 -60" />
+          <path d="M -42 -60 L 0 -78 L 42 -60" />
+        </g>
+        <use href="#logo-arm" transform="rotate(90)" />
+        <use href="#logo-arm" transform="rotate(180)" />
+        <use href="#logo-arm" transform="rotate(270)" />
+      </g>
+    </svg>
   );
 }
 
@@ -1244,9 +1296,8 @@ function delay(ms: number): Promise<void> {
 function loadAccentTheme(): AccentThemeId {
   try {
     const stored = localStorage.getItem(ACCENT_KEY);
-    return ACCENT_THEMES.some((theme) => theme.id === stored) ? (stored as AccentThemeId) : "purple";
+    return ACCENT_THEMES.some((theme) => theme.id === stored) ? (stored as AccentThemeId) : DEFAULT_ACCENT_THEME;
   } catch {
-    return "purple";
+    return DEFAULT_ACCENT_THEME;
   }
 }
-
