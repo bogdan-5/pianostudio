@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import type { SearchResponse, SongSearchResult, SongSource } from "../shared/types";
 
 const USER_AGENT =
-  "PianoLearningApp/1.0 (+local development; educational MIDI search and practice)";
+  "pianostudio/1.0 (+local development; educational MIDI search and practice)";
 
 const PUBLIC_DOMAIN_PIECES: SongSearchResult[] = [
   {
