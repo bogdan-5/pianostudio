@@ -625,9 +625,11 @@ export function App() {
       const snapped = snapLoopRangeToNotes(range, practiceNotes, song.durationSec);
       if (!snapped) return;
       setLoopRange(snapped);
-      restartPracticeSequence({ range: snapped });
+      setIsPlaying(false);
+      setIsDemoPlaying(false);
+      resetAttemptState();
     },
-    [practiceNotes, restartPracticeSequence, song.durationSec]
+    [practiceNotes, resetAttemptState, song.durationSec]
   );
 
   const clearLoopRange = useCallback(() => {

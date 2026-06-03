@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import type { LoopRange, NormalizedNote, PracticeMode } from "../../shared/types";
 import { buildPianoKeys, isBlackKey, midiToNoteName, PIANO_HIGH_MIDI, PIANO_LOW_MIDI } from "../../shared/music";
+import { LOOP_NOTE_TOLERANCE_SEC, normalizeLoopRange, notesInLoopRange } from "../lib/practice";
 
 type PracticeCanvasProps = {
   notes: NormalizedNote[];
@@ -58,6 +59,11 @@ export const PracticeCanvas = memo(function PracticeCanvas({
   const [draftLoopRange, setDraftLoopRange] = useState<LoopRange | undefined>();
   const geometry = useMemo(() => buildGeometry(lowMidi, highMidi), [highMidi, lowMidi]);
   const trackColorMap = useMemo(() => buildTrackColorMap(notes, trackIds), [notes, trackIds]);
+  const draftSelectedNoteIds = useMemo(() => {
+    if (!draftLoopRange) return new Set<string>();
+    const normalizedDraftRange = normalizeLoopRange(draftLoopRange, durationSec);
+    return new Set(notesInLoopRange(notes, normalizedDraftRange, LOOP_NOTE_TOLERANCE_SEC).map((note) => note.id));
+  }, [draftLoopRange, durationSec, notes]);
 
   useEffect(() => {
     cursorSecRef.current = cursorSec;
@@ -279,7 +285,8 @@ export const PracticeCanvas = memo(function PracticeCanvas({
         targetIds,
         completedIds,
         missedIds,
-        trackColorMap
+        trackColorMap,
+        draftSelectedNoteIds
       );
       paintNowLine(ctx, width, height, mode);
       paintActiveKeys(ctx, width, height, geometry, activePitches);
@@ -295,6 +302,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
     completedIds,
     cursorSec,
     draftLoopRange,
+    draftSelectedNoteIds,
     durationSec,
     geometry,
     loopRange,
@@ -421,7 +429,8 @@ function paintNotes(
   targetIds: Set<string>,
   completedIds: Set<string>,
   missedIds: Set<string>,
-  trackColorMap: Map<string, string>
+  trackColorMap: Map<string, string>,
+  draftSelectedNoteIds: Set<string>
 ) {
   const pxPerSec = height / secondsVisible;
   const visibleStart = cursorSec - 0.3;
@@ -441,22 +450,29 @@ function paintNotes(
     const isTarget = targetIds.has(note.id);
     const isCompleted = completedIds.has(note.id);
     const isMissed = missedIds.has(note.id);
+    const isDraftSelected = draftSelectedNoteIds.has(note.id);
     const trackColor = trackColorMap.get(note.trackId) ?? SINGLE_TRACK_NOTE_COLOR;
     const fillColor = isMissed ? "#64748b" : isTarget ? "#f6c453" : trackColor;
 
     ctx.save();
-    ctx.globalAlpha = isCompleted ? 0.32 : isMissed ? 0.28 : 0.96;
+    ctx.globalAlpha = isDraftSelected ? 1 : isCompleted ? 0.32 : isMissed ? 0.28 : 0.96;
     if (!isCompleted && !isMissed) {
       ctx.shadowColor = fillColor;
-      ctx.shadowBlur = isTarget ? 20 : 14;
+      ctx.shadowBlur = isDraftSelected ? 28 : isTarget ? 20 : 14;
     }
     ctx.fillStyle = fillColor;
     roundRect(ctx, x, top, keyWidth, noteHeight, 6);
     ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = isTarget ? "#fff7ad" : "rgba(255,255,255,0.34)";
-    ctx.lineWidth = isTarget ? 2 : 1;
+    ctx.strokeStyle = isDraftSelected ? "#fff7ad" : isTarget ? "#fff7ad" : "rgba(255,255,255,0.34)";
+    ctx.lineWidth = isDraftSelected ? 3 : isTarget ? 2 : 1;
     ctx.stroke();
+    if (isDraftSelected) {
+      ctx.strokeStyle = "rgba(246,196,83,0.48)";
+      ctx.lineWidth = 6;
+      roundRect(ctx, x - 2, top - 2, keyWidth + 4, noteHeight + 4, 8);
+      ctx.stroke();
+    }
     ctx.restore();
   });
 }
