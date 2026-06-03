@@ -1006,7 +1006,8 @@ input[type="range"] {
   height: 18px;
 }
 
-.metronomeIcon {
+.metronomeIcon,
+.sustainIcon {
   width: 18px;
   height: 18px;
   fill: none;

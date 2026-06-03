@@ -18,6 +18,7 @@ type PracticeCanvasProps = {
   highMidi?: number;
   secondsVisible: number;
   loopRange?: LoopRange;
+  noteGlowEnabled?: boolean;
   onLoopRangeSelect?: (range: LoopRange) => void;
   onViewportCursorChange?: (cursorSec: number) => void;
 };
@@ -42,6 +43,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
   highMidi = PIANO_HIGH_MIDI,
   secondsVisible,
   loopRange,
+  noteGlowEnabled = true,
   onLoopRangeSelect,
   onViewportCursorChange
 }: PracticeCanvasProps) {
@@ -286,7 +288,8 @@ export const PracticeCanvas = memo(function PracticeCanvas({
         completedIds,
         missedIds,
         trackColorMap,
-        draftSelectedNoteIds
+        draftSelectedNoteIds,
+        noteGlowEnabled
       );
       paintNowLine(ctx, width, height, mode);
       paintActiveKeys(ctx, width, height, geometry, activePitches);
@@ -308,6 +311,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
     loopRange,
     missedIds,
     mode,
+    noteGlowEnabled,
     notes,
     secondsVisible,
     targetIds,
@@ -430,7 +434,8 @@ function paintNotes(
   completedIds: Set<string>,
   missedIds: Set<string>,
   trackColorMap: Map<string, string>,
-  draftSelectedNoteIds: Set<string>
+  draftSelectedNoteIds: Set<string>,
+  noteGlowEnabled: boolean
 ) {
   const pxPerSec = height / secondsVisible;
   const visibleStart = cursorSec - 0.3;
@@ -456,7 +461,7 @@ function paintNotes(
 
     ctx.save();
     ctx.globalAlpha = isDraftSelected ? 1 : isCompleted ? 0.32 : isMissed ? 0.28 : 0.96;
-    if (!isCompleted && !isMissed) {
+    if (noteGlowEnabled && !isCompleted && !isMissed) {
       ctx.shadowColor = fillColor;
       ctx.shadowBlur = isDraftSelected ? 28 : isTarget ? 20 : 14;
     }

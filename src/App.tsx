@@ -98,7 +98,9 @@ export function App() {
   const [rangeMode, setRangeMode] = useState<"full" | "song">("full");
   const [keyboardBaseMidi, setKeyboardBaseMidi] = useState(60);
   const [metronome, setMetronome] = useState(false);
+  const [sustainPedal, setSustainPedal] = useState(false);
   const [countIn, setCountIn] = useState(true);
+  const [noteGlowEnabled, setNoteGlowEnabled] = useState(true);
   const [countdown, setCountdown] = useState(0);
   const [loopRange, setLoopRange] = useState<LoopRange | undefined>();
   const [sequenceRestartToken, setSequenceRestartToken] = useState(0);
@@ -189,6 +191,7 @@ export function App() {
     recentPitchTouchesRef.current.clear();
     clearDemoTimers();
     audioEngine.allNotesOff();
+    setSustainPedal(false);
     setActivePitches(new Set());
   }, [clearDemoTimers]);
 
@@ -202,6 +205,7 @@ export function App() {
     clearDemoTimers();
     clearInputMemory();
     audioEngine.allNotesOff();
+    setSustainPedal(false);
     setActivePitches(new Set());
     setWaiting(false);
     setCountdown(0);
@@ -340,10 +344,19 @@ export function App() {
     (event: MidiInputEvent) => {
       if (event.type === "noteon" && event.midi !== undefined) handleNoteOn(event.midi, event.velocity);
       if (event.type === "noteoff" && event.midi !== undefined) handleNoteOff(event.midi);
-      if (event.type === "pedal") event.pedalDown ? audioEngine.pedalDown() : audioEngine.pedalUp();
+      if (event.type === "pedal") {
+        const pedalDown = Boolean(event.pedalDown);
+        setSustainPedal(pedalDown);
+        pedalDown ? audioEngine.pedalDown() : audioEngine.pedalUp();
+      }
     },
     [handleNoteOff, handleNoteOn]
   );
+
+  const setSustainPedalDown = useCallback((pedalDown: boolean) => {
+    setSustainPedal(pedalDown);
+    pedalDown ? audioEngine.pedalDown() : audioEngine.pedalUp();
+  }, []);
 
   const midi = useWebMidi(handleMidiEvent);
 
@@ -959,6 +972,10 @@ export function App() {
                     <input type="checkbox" checked={rangeMode === "song"} onChange={(event) => setRangeMode(event.target.checked ? "song" : "full")} />
                     <span>Range zoom</span>
                   </label>
+                  <label className="toggleRow">
+                    <input type="checkbox" checked={noteGlowEnabled} onChange={(event) => setNoteGlowEnabled(event.target.checked)} />
+                    <span>Note glow</span>
+                  </label>
                 </section>
               ) : null}
 
@@ -1111,6 +1128,7 @@ export function App() {
                 highMidi={visibleRange.high}
                 secondsVisible={secondsVisible}
                 loopRange={loopRange}
+                noteGlowEnabled={noteGlowEnabled}
                 onLoopRangeSelect={selectLoopRange}
                 onViewportCursorChange={seekCanvasViewport}
               />
@@ -1166,6 +1184,11 @@ export function App() {
               <span>Metronome</span>
               <input type="checkbox" checked={metronome} onChange={(event) => setMetronome(event.target.checked)} />
             </label>
+            <label className="bottomToggle">
+              <SustainIcon />
+              <span>Sustain</span>
+              <input type="checkbox" checked={sustainPedal} onChange={(event) => setSustainPedalDown(event.target.checked)} />
+            </label>
           </div>
         </section>
       </main>
@@ -1181,6 +1204,17 @@ function MetronomeIcon() {
       <path d="M12 13.5l4.2-5.2" />
       <path d="M7.4 19.5h9.2" />
       <path d="M10 16h4" />
+    </svg>
+  );
+}
+
+function SustainIcon() {
+  return (
+    <svg className="sustainIcon" viewBox="0 0 24 24" role="img" aria-label="Sustain" aria-hidden="true">
+      <path d="M5 17.5h14" />
+      <path d="M7 17.5c.6-5.7 2.2-9.5 5-12.5 2.8 3 4.4 6.8 5 12.5" />
+      <path d="M9.5 17.5c.3-2.8 1.1-5 2.5-6.7 1.4 1.7 2.2 3.9 2.5 6.7" />
+      <path d="M8 20h8" />
     </svg>
   );
 }
