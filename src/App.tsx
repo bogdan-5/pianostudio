@@ -5,22 +5,29 @@ import {
   ChevronRight,
   CircleStop,
   Gauge,
+  Headphones,
   Keyboard,
   ListMusic,
   Music2,
+  Minus,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   Pause,
   Play,
+  Plus,
   RefreshCw,
   Repeat2,
   Search,
+  Settings,
   SlidersHorizontal,
+  Sparkles,
   Upload,
   Volume2,
   X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { MidiInputEvent } from "./hooks/useWebMidi";
 import { useWebMidi } from "./hooks/useWebMidi";
 import { audioEngine } from "./lib/audioEngine";
@@ -54,6 +61,22 @@ import {
 
 const EMPTY_STATS: PracticeStats = { correct: 0, wrong: 0, missed: 0, streak: 0 };
 type SidePanelTab = "songs" | "tracks" | "controls" | "stats";
+type AccentThemeId = "purple" | "teal" | "gold" | "blue" | "pink";
+
+const ACCENT_KEY = "piano-learning-accent-theme";
+const ACCENT_THEMES: Array<{
+  id: AccentThemeId;
+  label: string;
+  color: string;
+  rgb: string;
+  dark: string;
+}> = [
+  { id: "purple", label: "Purple", color: "#a855f7", rgb: "168, 85, 247", dark: "#6d28d9" },
+  { id: "teal", label: "Teal", color: "#34d399", rgb: "52, 211, 153", dark: "#047857" },
+  { id: "gold", label: "Gold", color: "#f6c453", rgb: "246, 196, 83", dark: "#b7791f" },
+  { id: "blue", label: "Blue", color: "#38bdf8", rgb: "56, 189, 248", dark: "#0369a1" },
+  { id: "pink", label: "Pink", color: "#fb7185", rgb: "251, 113, 133", dark: "#be123c" }
+];
 
 export function App() {
   const starterSong = useMemo(() => createBuiltInLesson(), []);
@@ -88,6 +111,7 @@ export function App() {
   const [audioStatus, setAudioStatus] = useState(audioEngine.status);
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
   const [activeSidePanel, setActiveSidePanel] = useState<SidePanelTab>("songs");
+  const [accentThemeId, setAccentThemeId] = useState<AccentThemeId>(() => loadAccentTheme());
 
   const cursorRef = useSyncedRef(cursorSec);
   const completedRef = useSyncedRef(completedIds);
@@ -143,6 +167,16 @@ export function App() {
   );
   const playableNoteCount = sessionNotes.length || 1;
   const accuracy = Math.round((stats.correct / Math.max(1, stats.correct + stats.wrong + stats.missed)) * 100);
+  const accentTheme = ACCENT_THEMES.find((theme) => theme.id === accentThemeId) ?? ACCENT_THEMES[0];
+  const accentStyle = useMemo(
+    () =>
+      ({
+        "--accent": accentTheme.color,
+        "--accent-rgb": accentTheme.rgb,
+        "--accent-dark": accentTheme.dark
+      }) as CSSProperties,
+    [accentTheme]
+  );
 
   const clearDemoTimers = useCallback(() => {
     demoStopTimersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -318,6 +352,14 @@ export function App() {
   useEffect(() => {
     audioEngine.setVolume(volume);
   }, [volume]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ACCENT_KEY, accentThemeId);
+    } catch {
+      // Ignore storage failures; the selected accent still applies for this session.
+    }
+  }, [accentThemeId]);
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -709,11 +751,16 @@ export function App() {
   }, []);
 
   return (
-    <div className="appShell">
+    <div className="appShell" style={accentStyle}>
       <header className="topBar">
-        <div>
-          <p className="eyebrow">Piano Practice Studio</p>
-          <h1>{song.title}</h1>
+        <div className="brandLockup">
+          <div className="appMark" aria-hidden="true">
+            <Sparkles size={28} />
+          </div>
+          <div className="brandText">
+            <p className="eyebrow">Piano Practice Studio</p>
+            <h1>{song.title}</h1>
+          </div>
         </div>
         <div className="topActions">
           <button className="iconTextButton" onClick={midi.connect} disabled={midi.permissionState === "connecting"}>
@@ -736,14 +783,26 @@ export function App() {
               <option value="">No device selected</option>
             )}
           </select>
+          <button className="settingsButton" aria-label="Settings" onClick={() => setActiveSidePanel("controls")}>
+            <Settings size={18} />
+          </button>
         </div>
       </header>
 
       <main className={`studioLayout ${sidePanelOpen ? "" : "sideCollapsed"}`}>
         {sidePanelOpen ? (
           <aside className="sidePanel">
-            <div className="sidePanelChrome">
-              <div className="sideTabs" role="tablist" aria-label="Practice panels">
+            <div className="sidePanelTop">
+              <div className="sidePanelTitle">
+                <Sparkles size={18} />
+                <span>Studio</span>
+              </div>
+              <button className="collapseButton" onClick={() => setSidePanelOpen(false)} aria-label="Hide side panel">
+                <PanelLeftClose size={18} />
+              </button>
+            </div>
+
+            <div className="sideTabs" role="tablist" aria-label="Practice panels">
                 <button
                   className={activeSidePanel === "songs" ? "selected" : ""}
                   onClick={() => setActiveSidePanel("songs")}
@@ -772,10 +831,6 @@ export function App() {
                   <Keyboard size={16} />
                   Status
                 </button>
-              </div>
-              <button className="collapseButton" onClick={() => setSidePanelOpen(false)} aria-label="Hide side panel">
-                <PanelLeftClose size={18} />
-              </button>
             </div>
 
             <div className={`sidePanelBody ${activeSidePanel === "songs" ? "songsPanelHost" : ""}`}>
@@ -833,7 +888,10 @@ export function App() {
                     </div>
                     <label className="uploadTarget">
                       <Upload size={19} />
-                      <span>{loadingSong && !results.some((result) => result.id === loadingSong) ? "Loading..." : "Choose MIDI file"}</span>
+                      <span>
+                        <strong>{loadingSong && !results.some((result) => result.id === loadingSong) ? "Loading..." : "Choose MIDI file"}</strong>
+                        <small>or drag and drop .mid / .midi</small>
+                      </span>
                       <input type="file" accept=".mid,.midi,audio/midi" onChange={(event) => void onUpload(event.target.files?.[0])} />
                     </label>
                   </section>
@@ -872,21 +930,7 @@ export function App() {
                     <SlidersHorizontal size={18} />
                     <h2>Controls</h2>
                   </div>
-                  <ControlSlider icon={<Gauge size={17} />} label="Speed" value={speed} min={0.35} max={1.5} step={0.05} onChange={setSpeed} suffix="x" />
-                  <ControlSlider icon={<Volume2 size={17} />} label="Volume" value={volume} min={0} max={1} step={0.01} onChange={setVolume} />
                   <ControlSlider icon={<ChevronDown size={17} />} label="Lookahead" value={secondsVisible} min={3} max={10} step={0.5} onChange={setSecondsVisible} suffix="s" />
-                  <div className="stepperRow">
-                    <span>Transpose</span>
-                    <div>
-                      <button onClick={() => setTranspose((value) => Math.max(-12, value - 1))}>
-                        <ChevronLeft size={16} />
-                      </button>
-                      <strong>{transpose > 0 ? `+${transpose}` : transpose}</strong>
-                      <button onClick={() => setTranspose((value) => Math.min(12, value + 1))}>
-                        <ChevronRight size={16} />
-                      </button>
-                    </div>
-                  </div>
                   <div className="stepperRow">
                     <span>Typing Octave</span>
                     <div>
@@ -899,10 +943,24 @@ export function App() {
                       </button>
                     </div>
                   </div>
-                  <label className="toggleRow">
-                    <input type="checkbox" checked={metronome} onChange={(event) => setMetronome(event.target.checked)} />
-                    <span>Metronome</span>
-                  </label>
+                  <div className="accentChooser">
+                    <span>
+                      <Palette size={17} />
+                      Accent
+                    </span>
+                    <div>
+                      {ACCENT_THEMES.map((theme) => (
+                        <button
+                          type="button"
+                          className={`accentSwatch ${accentThemeId === theme.id ? "selected" : ""}`}
+                          key={theme.id}
+                          onClick={() => setAccentThemeId(theme.id)}
+                          style={{ "--swatch": theme.color } as CSSProperties}
+                          aria-label={`${theme.label} accent`}
+                        />
+                      ))}
+                    </div>
+                  </div>
                   <label className="toggleRow">
                     <input type="checkbox" checked={countIn} onChange={(event) => setCountIn(event.target.checked)} />
                     <span>Count-in</span>
@@ -967,68 +1025,48 @@ export function App() {
 
         <section className="practicePanel">
           <div className="transportBar">
-            <div className="transportMain">
-              <button className="roundButton primary" onClick={togglePlay} disabled={Boolean(countdown)}>
-                {isPlaying ? <Pause size={22} /> : <Play size={22} />}
-              </button>
-              <button className="roundButton" onClick={stopTransport}>
-                <CircleStop size={20} />
-              </button>
-              <button className="roundButton" onClick={() => resetPractice()}>
-                <RefreshCw size={19} />
-              </button>
-              <button
-                className={`demoButton ${isDemoPlaying ? "active" : ""}`}
-                onClick={toggleDemoPlayback}
-                disabled={Boolean(countdown)}
-                aria-label={isDemoPlaying ? "Stop demo playback" : "Play demo automatically"}
-              >
-                {isDemoPlaying ? <Pause size={17} /> : <Music2 size={17} />}
-                <span>{isDemoPlaying ? "Stop Demo" : "Demo"}</span>
-              </button>
-              <div className="songMeta">
-                <strong>{isDemoPlaying ? "Demo playback" : loopRange ? "Loop practice" : song.artist || song.source || "Practice"}</strong>
-                <span>
-                  {formatDuration(timelineCursorSec)} / {formatDuration(timelineEndSec)} - {completionPercent}%
-                </span>
+            <div className="transportTop">
+              <div className="transportControls">
+                <button className="roundButton primary" onClick={togglePlay} disabled={Boolean(countdown)} aria-label={isPlaying ? "Pause" : "Play"}>
+                  {isPlaying ? <Pause size={24} /> : <Play size={24} />}
+                </button>
+                <button className="roundButton" onClick={stopTransport} aria-label="Stop">
+                  <CircleStop size={19} />
+                </button>
+                <button className="roundButton" onClick={() => resetPractice()} aria-label="Restart">
+                  <RefreshCw size={18} />
+                </button>
+                <button
+                  className={`demoButton ${isDemoPlaying ? "active" : ""}`}
+                  onClick={toggleDemoPlayback}
+                  disabled={Boolean(countdown)}
+                  aria-label={isDemoPlaying ? "Stop demo playback" : "Play demo automatically"}
+                >
+                  {isDemoPlaying ? <Pause size={16} /> : <Music2 size={16} />}
+                  <span>{isDemoPlaying ? "Stop" : "Demo"}</span>
+                </button>
+              </div>
+
+              <div className="transportReadout">
+                <strong>
+                  {formatDuration(timelineCursorSec)}
+                  <span>/ {formatDuration(timelineEndSec)}</span>
+                </strong>
+                <small>{completionPercent}% Complete</small>
+              </div>
+
+              <div className="modeSwitch" role="group" aria-label="Practice mode">
+                <button className={mode === "wait" ? "selected" : ""} onClick={() => setMode("wait")}>
+                  Wait
+                </button>
+                <button className={mode === "continuous" ? "selected" : ""} onClick={() => setMode("continuous")}>
+                  Flow
+                </button>
               </div>
             </div>
 
-            <div className="modeSwitch" role="group" aria-label="Practice mode">
-              <button className={mode === "wait" ? "selected" : ""} onClick={() => setMode("wait")}>
-                Wait
-              </button>
-              <button className={mode === "continuous" ? "selected" : ""} onClick={() => setMode("continuous")}>
-                Flow
-              </button>
-            </div>
-          </div>
-
-          <div className="progressStack">
-            {loopRange ? (
-              <div className="loopBar">
-                <div>
-                  <Repeat2 size={17} />
-                  <strong>
-                    {formatDuration(loopRange.startSec)} - {formatDuration(loopRange.endSec)}
-                  </strong>
-                  <span>{loopNotes.length} notes</span>
-                </div>
-                <div>
-                  <button onClick={() => restartPracticeSequence({ keepTransport: true })}>
-                    <RefreshCw size={16} />
-                    Restart
-                  </button>
-                  <button onClick={clearLoopRange}>
-                    <X size={16} />
-                    Clear
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="timelineRow">
-              <span>{formatDuration(timelineCursorSec)}</span>
+            <div className="transportProgress">
+              <span>{formatDuration(timelineStartSec)}</span>
               <input
                 type="range"
                 min={timelineStartSec}
@@ -1041,41 +1079,102 @@ export function App() {
             </div>
           </div>
 
-          <div className="canvasStage">
-            <PracticeCanvas
-              notes={practiceNotes}
-              trackIds={selectedTrackOrder}
-              cursorSec={cursorSec}
-              durationSec={song.durationSec}
-              mode={mode}
+          {loopRange ? (
+            <div className="loopBar">
+              <div>
+                <Repeat2 size={17} />
+                <strong>
+                  {formatDuration(loopRange.startSec)} - {formatDuration(loopRange.endSec)}
+                </strong>
+                <span>{loopNotes.length} notes</span>
+              </div>
+              <div>
+                <button onClick={() => restartPracticeSequence({ keepTransport: true })}>
+                  <RefreshCw size={16} />
+                  Restart
+                </button>
+                <button onClick={clearLoopRange}>
+                  <X size={16} />
+                  Clear
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="instrumentDeck">
+            <div className="canvasStage">
+              <PracticeCanvas
+                notes={practiceNotes}
+                trackIds={selectedTrackOrder}
+                cursorSec={cursorSec}
+                durationSec={song.durationSec}
+                mode={mode}
+                activePitches={activePitches}
+                targetIds={targetIds}
+                completedIds={completedIds}
+                missedIds={missedIds}
+                lowMidi={visibleRange.low}
+                highMidi={visibleRange.high}
+                secondsVisible={secondsVisible}
+                loopRange={loopRange}
+                onLoopRangeSelect={selectLoopRange}
+                onViewportCursorChange={seekCanvasViewport}
+              />
+              {isDemoPlaying ? (
+                <div className="statusPill demoStatus">Demo playback</div>
+              ) : waiting ? (
+                <div className="statusPill">Waiting for {targetCluster?.notes.map((note) => midiToNoteName(note.midi)).join(" + ")}</div>
+              ) : null}
+              {countdown ? <div className="countdown">{countdown}</div> : null}
+            </div>
+
+            <PianoKeyboard
               activePitches={activePitches}
-              targetIds={targetIds}
-              completedIds={completedIds}
-              missedIds={missedIds}
+              targetPitches={targetPitches}
               lowMidi={visibleRange.low}
               highMidi={visibleRange.high}
-              secondsVisible={secondsVisible}
-              loopRange={loopRange}
-              onLoopRangeSelect={selectLoopRange}
-              onViewportCursorChange={seekCanvasViewport}
+              keyboardBaseMidi={keyboardBaseMidi}
+              onPress={handleNoteOn}
+              onRelease={handleNoteOff}
             />
-            {isDemoPlaying ? (
-              <div className="statusPill demoStatus">Demo playback</div>
-            ) : waiting ? (
-              <div className="statusPill">Waiting for {targetCluster?.notes.map((note) => midiToNoteName(note.midi)).join(" + ")}</div>
-            ) : null}
-            {countdown ? <div className="countdown">{countdown}</div> : null}
           </div>
 
-          <PianoKeyboard
-            activePitches={activePitches}
-            targetPitches={targetPitches}
-            lowMidi={visibleRange.low}
-            highMidi={visibleRange.high}
-            keyboardBaseMidi={keyboardBaseMidi}
-            onPress={handleNoteOn}
-            onRelease={handleNoteOff}
-          />
+          <div className="bottomControlStrip">
+            <div className="utilityChip">
+              <Headphones size={17} />
+              <span>{audioStatus === "fallback" ? "Synth fallback" : audioStatus === "ready" ? "Grand samples" : "Audio idle"}</span>
+            </div>
+            <label className="bottomSlider">
+              <Volume2 size={17} />
+              <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
+              <strong>{Math.round(volume * 100)}%</strong>
+            </label>
+            <div className="bottomStepper">
+              <Gauge size={17} />
+              <span>Speed</span>
+              <strong>{Number(speed.toFixed(2))}x</strong>
+              <button onClick={() => setSpeed((value) => Math.max(0.35, Number((value - 0.05).toFixed(2))))} aria-label="Decrease speed">
+                <Minus size={15} />
+              </button>
+              <button onClick={() => setSpeed((value) => Math.min(1.5, Number((value + 0.05).toFixed(2))))} aria-label="Increase speed">
+                <Plus size={15} />
+              </button>
+            </div>
+            <div className="bottomStepper">
+              <span>Transpose</span>
+              <strong>{transpose > 0 ? `+${transpose}` : transpose}</strong>
+              <button onClick={() => setTranspose((value) => Math.max(-12, value - 1))} aria-label="Transpose down">
+                <Minus size={15} />
+              </button>
+              <button onClick={() => setTranspose((value) => Math.min(12, value + 1))} aria-label="Transpose up">
+                <Plus size={15} />
+              </button>
+            </div>
+            <label className="bottomToggle">
+              <span>Metronome</span>
+              <input type="checkbox" checked={metronome} onChange={(event) => setMetronome(event.target.checked)} />
+            </label>
+          </div>
         </section>
       </main>
     </div>
@@ -1140,5 +1239,14 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function loadAccentTheme(): AccentThemeId {
+  try {
+    const stored = localStorage.getItem(ACCENT_KEY);
+    return ACCENT_THEMES.some((theme) => theme.id === stored) ? (stored as AccentThemeId) : "purple";
+  } catch {
+    return "purple";
+  }
 }
 

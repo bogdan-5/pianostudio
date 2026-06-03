@@ -24,8 +24,8 @@ type PracticeCanvasProps = {
 const AUTO_SCROLL_EDGE_PX = 72;
 const AUTO_SCROLL_MAX_VISIBLE_WINDOWS_PER_SEC = 0.8;
 const WHEEL_SCROLL_SCALE = 0.9;
-const SINGLE_TRACK_NOTE_COLOR = "#38bdf8";
-const TRACK_NOTE_COLORS = ["#38bdf8", "#fb7185", "#a78bfa", "#34d399", "#f59e0b", "#f472b6"];
+const SINGLE_TRACK_NOTE_COLOR = "#22d3ee";
+const TRACK_NOTE_COLORS = ["#22d3ee", "#fb6fae", "#a78bfa", "#34d399", "#f6c453", "#f472b6"];
 
 export const PracticeCanvas = memo(function PracticeCanvas({
   notes,
@@ -379,28 +379,35 @@ export function buildTrackColorMap(notes: NormalizedNote[], trackIds: string[]):
 
 function paintBackground(ctx: CanvasRenderingContext2D, width: number, height: number, geometry: KeyGeometry) {
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#111827");
-  gradient.addColorStop(0.5, "#172033");
-  gradient.addColorStop(1, "#0f172a");
+  gradient.addColorStop(0, "#0b0d12");
+  gradient.addColorStop(0.48, "#090b10");
+  gradient.addColorStop(1, "#050607");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 
   geometry.xByMidi.forEach((relativeX, midi) => {
     const keyWidth = (geometry.widthByMidi.get(midi) ?? geometry.whiteWidth) * width;
     const x = relativeX * width;
-    ctx.fillStyle = geometry.blackByMidi.get(midi) ? "rgba(255,255,255,0.035)" : "rgba(255,255,255,0.07)";
+    ctx.fillStyle = geometry.blackByMidi.get(midi) ? "rgba(255,255,255,0.025)" : "rgba(255,255,255,0.052)";
     ctx.fillRect(x, 0, Math.max(1, keyWidth - 1), height);
   });
 
-  for (let beat = 0; beat < 8; beat += 1) {
-    const y = height - (beat / 8) * height;
-    ctx.strokeStyle = beat === 0 ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.07)";
+  for (let beat = 0; beat <= 12; beat += 1) {
+    const y = height - (beat / 12) * height;
+    ctx.strokeStyle = beat === 0 ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.055)";
     ctx.lineWidth = beat === 0 ? 2 : 1;
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(width, y);
     ctx.stroke();
   }
+
+  const glow = ctx.createRadialGradient(width * 0.5, height, 0, width * 0.5, height, width * 0.55);
+  glow.addColorStop(0, "rgba(168,85,247,0.16)");
+  glow.addColorStop(0.38, "rgba(34,211,238,0.07)");
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, width, height);
 }
 
 function paintNotes(
@@ -435,13 +442,19 @@ function paintNotes(
     const isCompleted = completedIds.has(note.id);
     const isMissed = missedIds.has(note.id);
     const trackColor = trackColorMap.get(note.trackId) ?? SINGLE_TRACK_NOTE_COLOR;
+    const fillColor = isMissed ? "#64748b" : isTarget ? "#f6c453" : trackColor;
 
     ctx.save();
     ctx.globalAlpha = isCompleted ? 0.32 : isMissed ? 0.28 : 0.96;
-    ctx.fillStyle = isMissed ? "#64748b" : isTarget ? "#facc15" : trackColor;
+    if (!isCompleted && !isMissed) {
+      ctx.shadowColor = fillColor;
+      ctx.shadowBlur = isTarget ? 20 : 14;
+    }
+    ctx.fillStyle = fillColor;
     roundRect(ctx, x, top, keyWidth, noteHeight, 6);
     ctx.fill();
-    ctx.strokeStyle = isTarget ? "#fff7ad" : "rgba(255,255,255,0.28)";
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = isTarget ? "#fff7ad" : "rgba(255,255,255,0.34)";
     ctx.lineWidth = isTarget ? 2 : 1;
     ctx.stroke();
     ctx.restore();
@@ -489,12 +502,15 @@ function paintLoopRange(
 }
 
 function paintNowLine(ctx: CanvasRenderingContext2D, width: number, height: number, mode: PracticeMode) {
-  ctx.strokeStyle = mode === "wait" ? "#facc15" : "#a7f3d0";
+  ctx.strokeStyle = mode === "wait" ? "#f6c453" : "#a78bfa";
   ctx.lineWidth = 3;
+  ctx.shadowColor = mode === "wait" ? "#f6c453" : "#a78bfa";
+  ctx.shadowBlur = 16;
   ctx.beginPath();
   ctx.moveTo(0, height - 2);
   ctx.lineTo(width, height - 2);
   ctx.stroke();
+  ctx.shadowBlur = 0;
 }
 
 function paintActiveKeys(
@@ -508,20 +524,20 @@ function paintActiveKeys(
     const relativeX = geometry.xByMidi.get(midi);
     if (relativeX === undefined) return;
     const keyWidth = (geometry.widthByMidi.get(midi) ?? geometry.whiteWidth) * width;
-    ctx.fillStyle = "rgba(74, 222, 128, 0.22)";
+    ctx.fillStyle = "rgba(34, 211, 238, 0.18)";
     ctx.fillRect(relativeX * width, height - 44, keyWidth, 42);
   });
 }
 
 function paintRuler(ctx: CanvasRenderingContext2D, width: number, height: number, cursorSec: number, durationSec: number) {
-  ctx.fillStyle = "rgba(15,23,42,0.64)";
+  ctx.fillStyle = "rgba(5,6,7,0.68)";
   roundRect(ctx, 14, 14, 144, 34, 8);
   ctx.fill();
-  ctx.fillStyle = "#e5e7eb";
+  ctx.fillStyle = "#f8f7fb";
   ctx.font = "600 13px Inter, system-ui, sans-serif";
   ctx.fillText(`${formatClock(cursorSec)} / ${formatClock(durationSec)}`, 28, 36);
 
-  ctx.fillStyle = "rgba(255,255,255,0.68)";
+  ctx.fillStyle = "rgba(255,255,255,0.58)";
   ctx.font = "500 11px Inter, system-ui, sans-serif";
   for (const midi of [24, 36, 48, 60, 72, 84, 96, 108]) {
     const x = geometryXLabel(width, midi);
