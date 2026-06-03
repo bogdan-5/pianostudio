@@ -93,7 +93,7 @@ export function App() {
   const [cursorSec, setCursorSec] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [transpose, setTranspose] = useState(0);
-  const [volume, setVolume] = useState(0.82);
+  const [volume, setVolume] = useState(0.3);
   const [secondsVisible, setSecondsVisible] = useState(6);
   const [rangeMode, setRangeMode] = useState<"full" | "song">("full");
   const [keyboardBaseMidi, setKeyboardBaseMidi] = useState(60);

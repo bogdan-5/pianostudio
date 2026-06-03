@@ -23,9 +23,21 @@ type PracticeCanvasProps = {
   onViewportCursorChange?: (cursorSec: number) => void;
 };
 
+type LoopSelectionDrag =
+  | { type: "range"; pointerId: number; startSec: number }
+  | { type: "rect"; pointerId: number; startX: number; startY: number; startSec: number };
+
+type DraftLoopRect = {
+  startX: number;
+  endX: number;
+  startSec: number;
+  endSec: number;
+};
+
 const AUTO_SCROLL_EDGE_PX = 72;
 const AUTO_SCROLL_MAX_VISIBLE_WINDOWS_PER_SEC = 0.8;
 const WHEEL_SCROLL_SCALE = 0.9;
+const RECT_SELECTION_MIN_PX = 8;
 const SINGLE_TRACK_NOTE_COLOR = "#22d3ee";
 const TRACK_NOTE_COLORS = ["#22d3ee", "#fb6fae", "#a78bfa", "#34d399", "#f6c453", "#f472b6"];
 const VISIBLE_NOTE_HEADROOM_SEC = 0.3;
@@ -50,24 +62,39 @@ export const PracticeCanvas = memo(function PracticeCanvas({
 }: PracticeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const selectionRef = useRef<{ pointerId: number; startSec: number } | null>(null);
+  const selectionRef = useRef<LoopSelectionDrag | null>(null);
   const cursorSecRef = useRef(cursorSec);
   const durationSecRef = useRef(durationSec);
   const secondsVisibleRef = useRef(secondsVisible);
   const onViewportCursorChangeRef = useRef(onViewportCursorChange);
+  const pointerClientXRef = useRef<number | null>(null);
   const pointerClientYRef = useRef<number | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
   const autoScrollLastRef = useRef(0);
   const autoScrollVelocityRef = useRef(0);
   const [draftLoopRange, setDraftLoopRange] = useState<LoopRange | undefined>();
+  const [draftLoopRect, setDraftLoopRect] = useState<DraftLoopRect | undefined>();
   const geometry = useMemo(() => buildGeometry(lowMidi, highMidi), [highMidi, lowMidi]);
   const trackColorMap = useMemo(() => buildTrackColorMap(notes, trackIds), [notes, trackIds]);
   const maxNoteDurationSec = useMemo(() => notes.reduce((max, note) => Math.max(max, note.durationSec), 0), [notes]);
-  const draftSelectedNoteIds = useMemo(() => {
+  const draftRangeSelectedNoteIds = useMemo(() => {
     if (!draftLoopRange) return new Set<string>();
     const normalizedDraftRange = normalizeLoopRange(draftLoopRange, durationSec);
     return new Set(notesInLoopRange(notes, normalizedDraftRange, LOOP_NOTE_TOLERANCE_SEC).map((note) => note.id));
   }, [draftLoopRange, durationSec, notes]);
+  const draftRectSelectedNoteIds = useMemo(() => {
+    if (!draftLoopRect) return new Set<string>();
+    const hostRect = hostRef.current?.getBoundingClientRect();
+    if (!hostRect) return new Set<string>();
+    return new Set(
+      getNotesInSelectionRect(notes, draftLoopRect, geometry, hostRect.width).map((note) => note.id)
+    );
+  }, [draftLoopRect, geometry, notes]);
+  const draftSelectedNoteIds = draftLoopRect ? draftRectSelectedNoteIds : draftRangeSelectedNoteIds;
+  const activeLoopNoteIds = useMemo(() => {
+    if (!loopRange) return new Set<string>();
+    return new Set(notesInLoopRange(notes, loopRange).map((note) => note.id));
+  }, [loopRange, notes]);
 
   useEffect(() => {
     cursorSecRef.current = cursorSec;
@@ -91,9 +118,17 @@ export const PracticeCanvas = memo(function PracticeCanvas({
   const updateDraftEndFromPointer = useCallback(() => {
     const selection = selectionRef.current;
     const host = hostRef.current;
+    const pointerClientX = pointerClientXRef.current;
     const pointerClientY = pointerClientYRef.current;
     if (!selection || !host || pointerClientY === null) return;
-    setDraftLoopRange({ startSec: selection.startSec, endSec: timeFromClientY(pointerClientY, host) });
+    const endSec = timeFromClientY(pointerClientY, host);
+    if (selection.type === "range") {
+      setDraftLoopRange({ startSec: selection.startSec, endSec });
+      return;
+    }
+    if (pointerClientX === null) return;
+    const { x } = pointFromClient(pointerClientX, pointerClientY, host);
+    setDraftLoopRect({ startX: selection.startX, endX: x, startSec: selection.startSec, endSec });
   }, [timeFromClientY]);
 
   const scrollViewportBy = useCallback(
@@ -193,13 +228,24 @@ export const PracticeCanvas = memo(function PracticeCanvas({
 
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
-      if (!onLoopRangeSelect || event.button !== 0) return;
+      if (!onLoopRangeSelect || (event.button !== 0 && event.button !== 2)) return;
       const startSec = timeFromPointer(event);
+      const { x, y } = pointFromClient(event.clientX, event.clientY, event.currentTarget);
       hostRef.current = event.currentTarget;
+      pointerClientXRef.current = event.clientX;
       pointerClientYRef.current = event.clientY;
-      selectionRef.current = { pointerId: event.pointerId, startSec };
+      selectionRef.current =
+        event.button === 2
+          ? { type: "rect", pointerId: event.pointerId, startX: x, startY: y, startSec }
+          : { type: "range", pointerId: event.pointerId, startSec };
       event.currentTarget.setPointerCapture(event.pointerId);
-      setDraftLoopRange({ startSec, endSec: startSec });
+      if (event.button === 2) {
+        setDraftLoopRange(undefined);
+        setDraftLoopRect({ startX: x, endX: x, startSec, endSec: startSec });
+      } else {
+        setDraftLoopRect(undefined);
+        setDraftLoopRange({ startSec, endSec: startSec });
+      }
       event.preventDefault();
     },
     [onLoopRangeSelect, timeFromPointer]
@@ -209,8 +255,15 @@ export const PracticeCanvas = memo(function PracticeCanvas({
     (event: PointerEvent<HTMLDivElement>) => {
       const selection = selectionRef.current;
       if (!selection || selection.pointerId !== event.pointerId) return;
+      pointerClientXRef.current = event.clientX;
       pointerClientYRef.current = event.clientY;
-      setDraftLoopRange({ startSec: selection.startSec, endSec: timeFromPointer(event) });
+      const endSec = timeFromPointer(event);
+      if (selection.type === "range") {
+        setDraftLoopRange({ startSec: selection.startSec, endSec });
+      } else {
+        const { x } = pointFromClient(event.clientX, event.clientY, event.currentTarget);
+        setDraftLoopRect({ startX: selection.startX, endX: x, startSec: selection.startSec, endSec });
+      }
       updateAutoScrollVelocity(event.currentTarget, event.clientY);
       event.preventDefault();
     },
@@ -222,19 +275,40 @@ export const PracticeCanvas = memo(function PracticeCanvas({
       const selection = selectionRef.current;
       if (!selection || selection.pointerId !== event.pointerId) return;
       const endSec = timeFromPointer(event);
+      const endPoint = pointFromClient(event.clientX, event.clientY, event.currentTarget);
       selectionRef.current = null;
+      pointerClientXRef.current = null;
       pointerClientYRef.current = null;
       stopAutoScroll();
       setDraftLoopRange(undefined);
+      setDraftLoopRect(undefined);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
-      if (Math.abs(endSec - selection.startSec) >= 0.12) {
+      if (selection.type === "range" && Math.abs(endSec - selection.startSec) >= 0.12) {
         onLoopRangeSelect?.({ startSec: selection.startSec, endSec });
+      } else if (selection.type === "rect") {
+        const dragDistance = Math.hypot(endPoint.x - selection.startX, endPoint.y - selection.startY);
+        const rect = { startX: selection.startX, endX: endPoint.x, startSec: selection.startSec, endSec };
+        const selectedNotes = getNotesInSelectionRect(
+          notes,
+          rect,
+          geometry,
+          event.currentTarget.getBoundingClientRect().width
+        );
+        if (dragDistance >= RECT_SELECTION_MIN_PX && selectedNotes.length > 0) {
+          const firstStart = Math.min(...selectedNotes.map((note) => note.startSec));
+          const lastEnd = Math.max(...selectedNotes.map((note) => note.startSec + note.durationSec));
+          onLoopRangeSelect?.({
+            startSec: firstStart,
+            endSec: lastEnd,
+            noteIds: selectedNotes.map((note) => note.id)
+          });
+        }
       }
       event.preventDefault();
     },
-    [onLoopRangeSelect, stopAutoScroll, timeFromPointer]
+    [geometry, notes, onLoopRangeSelect, stopAutoScroll, timeFromPointer]
   );
 
   const handleWheel = useCallback(
@@ -278,6 +352,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
       ctx.clearRect(0, 0, width, height);
       paintBackground(ctx, width, height, geometry);
       paintLoopRange(ctx, width, height, cursorSec, secondsVisible, draftLoopRange ?? loopRange, Boolean(draftLoopRange));
+      paintLoopRect(ctx, width, height, cursorSec, secondsVisible, draftLoopRect);
       paintNotes(
         ctx,
         width,
@@ -291,6 +366,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
         missedIds,
         trackColorMap,
         draftSelectedNoteIds,
+        activeLoopNoteIds,
         noteGlowEnabled,
         maxNoteDurationSec
       );
@@ -305,9 +381,11 @@ export const PracticeCanvas = memo(function PracticeCanvas({
     return () => observer.disconnect();
   }, [
     activePitches,
+    activeLoopNoteIds,
     completedIds,
     cursorSec,
     draftLoopRange,
+    draftLoopRect,
     draftSelectedNoteIds,
     durationSec,
     geometry,
@@ -330,6 +408,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={finishSelection}
       onPointerCancel={finishSelection}
+      onContextMenu={(event) => event.preventDefault()}
       onWheel={handleWheel}
     >
       <canvas ref={canvasRef} className="practiceCanvas" />
@@ -393,6 +472,51 @@ export function buildTrackColorMap(notes: NormalizedNote[], trackIds: string[]):
   );
 }
 
+function pointFromClient(clientX: number, clientY: number, host: HTMLDivElement) {
+  const rect = host.getBoundingClientRect();
+  return {
+    x: clamp(clientX - rect.left, 0, rect.width),
+    y: clamp(clientY - rect.top, 0, rect.height)
+  };
+}
+
+function getNotesInSelectionRect(
+  notes: NormalizedNote[],
+  rect: DraftLoopRect,
+  geometry: KeyGeometry,
+  width: number
+): NormalizedNote[] {
+  const bounds = normalizeSelectionRect(rect);
+  if (bounds.right - bounds.left < 1 || bounds.endSec - bounds.startSec < 0.001) return [];
+
+  return notes.filter((note) => {
+    const noteBox = getNoteHorizontalBox(note, geometry, width);
+    if (!noteBox) return false;
+
+    const noteStart = note.startSec;
+    const noteEnd = note.startSec + Math.max(0.001, note.durationSec);
+    return noteBox.right >= bounds.left && noteBox.left <= bounds.right && noteEnd >= bounds.startSec && noteStart <= bounds.endSec;
+  });
+}
+
+function getNoteHorizontalBox(note: NormalizedNote, geometry: KeyGeometry, width: number) {
+  const relativeX = geometry.xByMidi.get(note.midi);
+  if (relativeX === undefined) return undefined;
+
+  const keyWidth = Math.max(8, (geometry.widthByMidi.get(note.midi) ?? geometry.whiteWidth) * width - 2);
+  const left = relativeX * width + 1;
+  return { left, right: left + keyWidth };
+}
+
+function normalizeSelectionRect(rect: DraftLoopRect) {
+  return {
+    left: Math.min(rect.startX, rect.endX),
+    right: Math.max(rect.startX, rect.endX),
+    startSec: Math.min(rect.startSec, rect.endSec),
+    endSec: Math.max(rect.startSec, rect.endSec)
+  };
+}
+
 function paintBackground(ctx: CanvasRenderingContext2D, width: number, height: number, geometry: KeyGeometry) {
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
   gradient.addColorStop(0, "#0b0d12");
@@ -439,6 +563,7 @@ function paintNotes(
   missedIds: Set<string>,
   trackColorMap: Map<string, string>,
   draftSelectedNoteIds: Set<string>,
+  activeLoopNoteIds: Set<string>,
   noteGlowEnabled: boolean,
   maxNoteDurationSec: number
 ) {
@@ -460,20 +585,29 @@ function paintNotes(
     const isCompleted = completedIds.has(note.id);
     const isMissed = missedIds.has(note.id);
     const isDraftSelected = draftSelectedNoteIds.has(note.id);
+    const isActiveLoopSelected = activeLoopNoteIds.has(note.id) && !isDraftSelected;
     const trackColor = trackColorMap.get(note.trackId) ?? SINGLE_TRACK_NOTE_COLOR;
-    const fillColor = isMissed ? "#64748b" : isTarget ? "#f6c453" : trackColor;
+    const baseFillColor = isMissed ? "#64748b" : isTarget ? "#f6c453" : trackColor;
+    const fillColor =
+      isActiveLoopSelected && !isTarget && !isMissed ? activeLoopSelectionColor(baseFillColor) : baseFillColor;
 
     ctx.save();
     if (noteGlowEnabled && !isCompleted && !isMissed) {
       ctx.shadowColor = fillColor;
       ctx.shadowBlur = isDraftSelected ? 28 : isTarget ? 20 : 14;
     }
-    ctx.globalAlpha = isDraftSelected ? 1 : isCompleted ? 0.32 : isMissed ? 0.28 : 0.96;
+    ctx.globalAlpha = isDraftSelected ? 1 : isCompleted ? 0.32 : isMissed ? 0.28 : isActiveLoopSelected ? 0.88 : 0.96;
     ctx.fillStyle = fillColor;
     roundRect(ctx, x, top, keyWidth, noteHeight, 6);
     ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = isDraftSelected ? "#fff7ad" : isTarget ? "#fff7ad" : "rgba(255,255,255,0.34)";
+    ctx.strokeStyle = isDraftSelected
+      ? "#fff7ad"
+      : isTarget
+        ? "#fff7ad"
+        : isActiveLoopSelected
+          ? "rgba(255,255,255,0.18)"
+          : "rgba(255,255,255,0.34)";
     ctx.lineWidth = isDraftSelected ? 3 : isTarget ? 2 : 1;
     ctx.stroke();
     if (isDraftSelected) {
@@ -560,6 +694,43 @@ function paintLoopRange(
   ctx.restore();
 }
 
+function paintLoopRect(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  cursorSec: number,
+  secondsVisible: number,
+  rect: DraftLoopRect | undefined
+) {
+  if (!rect) return;
+
+  const bounds = normalizeSelectionRect(rect);
+  const pxPerSec = height / secondsVisible;
+  const top = height - (bounds.endSec - cursorSec) * pxPerSec;
+  const bottom = height - (bounds.startSec - cursorSec) * pxPerSec;
+  const visibleTop = clamp(top, 0, height);
+  const visibleBottom = clamp(bottom, 0, height);
+  const visibleLeft = clamp(bounds.left, 0, width);
+  const visibleRight = clamp(bounds.right, 0, width);
+
+  if (visibleBottom - visibleTop <= 1 || visibleRight - visibleLeft <= 1) return;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(125, 211, 252, 0.13)";
+  ctx.fillRect(visibleLeft, visibleTop, visibleRight - visibleLeft, visibleBottom - visibleTop);
+  ctx.strokeStyle = "rgba(125, 211, 252, 0.96)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([7, 5]);
+  ctx.strokeRect(
+    visibleLeft + 1,
+    visibleTop + 1,
+    Math.max(2, visibleRight - visibleLeft - 2),
+    Math.max(2, visibleBottom - visibleTop - 2)
+  );
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 function paintNowLine(ctx: CanvasRenderingContext2D, width: number, height: number, mode: PracticeMode) {
   ctx.strokeStyle = mode === "wait" ? "#f6c453" : "#a78bfa";
   ctx.lineWidth = 3;
@@ -623,6 +794,39 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: n
   ctx.arcTo(x, y + height, x, y, r);
   ctx.arcTo(x, y, x + width, y, r);
   ctx.closePath();
+}
+
+function activeLoopSelectionColor(color: string): string {
+  switch (color.toLowerCase()) {
+    case "#22d3ee":
+      return "#0268a3";
+    case "#fb6fae":
+    case "#f472b6":
+      return "#c73681";
+    case "#a78bfa":
+      return "#7c3aed";
+    case "#34d399":
+      return "#15803d";
+    case "#f6c453":
+      return "#d97706";
+    default:
+      return darkenHexColor(color, 0.58);
+  }
+}
+
+function darkenHexColor(color: string, factor: number): string {
+  const hex = color.startsWith("#") ? color.slice(1) : color;
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return color;
+
+  const value = Number.parseInt(hex, 16);
+  const r = Math.round(((value >> 16) & 255) * factor);
+  const g = Math.round(((value >> 8) & 255) * factor);
+  const b = Math.round((value & 255) * factor);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function normalizeWheelDelta(event: globalThis.WheelEvent, hostHeight: number): number {

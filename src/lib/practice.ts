@@ -105,7 +105,7 @@ export function normalizeLoopRange(
     startSec = Math.max(0, Math.min(startSec, endSec - minRangeSec));
   }
 
-  return { startSec, endSec };
+  return range.noteIds ? { startSec, endSec, noteIds: range.noteIds } : { startSec, endSec };
 }
 
 export function notesInLoopRange(
@@ -114,6 +114,10 @@ export function notesInLoopRange(
   toleranceSec = LOOP_NOTE_TOLERANCE_SEC
 ): NormalizedNote[] {
   if (!range) return notes;
+  if (range.noteIds?.length) {
+    const selectedIds = new Set(range.noteIds);
+    return notes.filter((note) => selectedIds.has(note.id));
+  }
   return notes.filter(
     (note) => note.startSec >= range.startSec - toleranceSec && note.startSec <= range.endSec + toleranceSec
   );
@@ -135,7 +139,8 @@ export function snapLoopRangeToNotes(
   return normalizeLoopRange(
     {
       startSec: Math.max(0, firstStart - toleranceSec),
-      endSec: Math.min(Math.max(0, durationSec), lastEnd + toleranceSec)
+      endSec: Math.min(Math.max(0, durationSec), lastEnd + toleranceSec),
+      noteIds: selected.map((note) => note.id)
     },
     durationSec
   );

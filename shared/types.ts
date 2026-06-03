@@ -3,6 +3,7 @@ export type PracticeMode = "wait" | "continuous";
 export type LoopRange = {
   startSec: number;
   endSec: number;
+  noteIds?: string[];
 };
 
 export type SongSource = "bitmidi" | "mutopia" | "direct";

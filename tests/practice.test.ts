@@ -65,8 +65,20 @@ describe("practice rules", () => {
   it("snaps a dragged loop range to the notes inside it", () => {
     const loop = snapLoopRangeToNotes({ startSec: 0.98, endSec: 1.5 }, notes, 4);
 
-    expect(loop).toEqual({ startSec: 0.96, endSec: 1.58 });
+    expect(loop).toEqual({ startSec: 0.96, endSec: 1.58, noteIds: ["a", "b"] });
     expect(notesInLoopRange(notes, loop).map((item) => item.id)).toEqual(["a", "b"]);
+  });
+
+  it("keeps loop playback notes locked to the highlighted notes", () => {
+    const denseNotes = [
+      note("edge-before", 57, 0.93),
+      note("selected", 60, 1),
+      note("edge-after", 64, 1.59)
+    ];
+    const loop = snapLoopRangeToNotes({ startSec: 0.98, endSec: 1.04 }, denseNotes, 4);
+
+    expect(loop).toEqual({ startSec: 0.96, endSec: 1.54, noteIds: ["selected"] });
+    expect(notesInLoopRange(denseNotes, loop).map((item) => item.id)).toEqual(["selected"]);
   });
 
   it("matches continuous input inside the hit window", () => {
