@@ -28,6 +28,7 @@ const AUTO_SCROLL_MAX_VISIBLE_WINDOWS_PER_SEC = 0.8;
 const WHEEL_SCROLL_SCALE = 0.9;
 const SINGLE_TRACK_NOTE_COLOR = "#22d3ee";
 const TRACK_NOTE_COLORS = ["#22d3ee", "#fb6fae", "#a78bfa", "#34d399", "#f6c453", "#f472b6"];
+const VISIBLE_NOTE_HEADROOM_SEC = 0.3;
 
 export const PracticeCanvas = memo(function PracticeCanvas({
   notes,
@@ -61,6 +62,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
   const [draftLoopRange, setDraftLoopRange] = useState<LoopRange | undefined>();
   const geometry = useMemo(() => buildGeometry(lowMidi, highMidi), [highMidi, lowMidi]);
   const trackColorMap = useMemo(() => buildTrackColorMap(notes, trackIds), [notes, trackIds]);
+  const maxNoteDurationSec = useMemo(() => notes.reduce((max, note) => Math.max(max, note.durationSec), 0), [notes]);
   const draftSelectedNoteIds = useMemo(() => {
     if (!draftLoopRange) return new Set<string>();
     const normalizedDraftRange = normalizeLoopRange(draftLoopRange, durationSec);
@@ -289,7 +291,8 @@ export const PracticeCanvas = memo(function PracticeCanvas({
         missedIds,
         trackColorMap,
         draftSelectedNoteIds,
-        noteGlowEnabled
+        noteGlowEnabled,
+        maxNoteDurationSec
       );
       paintNowLine(ctx, width, height, mode);
       paintActiveKeys(ctx, width, height, geometry, activePitches);
@@ -309,6 +312,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
     durationSec,
     geometry,
     loopRange,
+    maxNoteDurationSec,
     missedIds,
     mode,
     noteGlowEnabled,
@@ -435,14 +439,14 @@ function paintNotes(
   missedIds: Set<string>,
   trackColorMap: Map<string, string>,
   draftSelectedNoteIds: Set<string>,
-  noteGlowEnabled: boolean
+  noteGlowEnabled: boolean,
+  maxNoteDurationSec: number
 ) {
   const pxPerSec = height / secondsVisible;
-  const visibleStart = cursorSec - 0.3;
+  const visibleStart = cursorSec - VISIBLE_NOTE_HEADROOM_SEC;
   const visibleEnd = cursorSec + secondsVisible;
 
-  notes.forEach((note) => {
-    if (note.startSec + note.durationSec < visibleStart || note.startSec > visibleEnd) return;
+  getVisibleNotes(notes, visibleStart, visibleEnd, maxNoteDurationSec).forEach((note) => {
     const relativeX = geometry.xByMidi.get(note.midi);
     if (relativeX === undefined) return;
 
@@ -460,11 +464,11 @@ function paintNotes(
     const fillColor = isMissed ? "#64748b" : isTarget ? "#f6c453" : trackColor;
 
     ctx.save();
-    ctx.globalAlpha = isDraftSelected ? 1 : isCompleted ? 0.32 : isMissed ? 0.28 : 0.96;
     if (noteGlowEnabled && !isCompleted && !isMissed) {
       ctx.shadowColor = fillColor;
       ctx.shadowBlur = isDraftSelected ? 28 : isTarget ? 20 : 14;
     }
+    ctx.globalAlpha = isDraftSelected ? 1 : isCompleted ? 0.32 : isMissed ? 0.28 : 0.96;
     ctx.fillStyle = fillColor;
     roundRect(ctx, x, top, keyWidth, noteHeight, 6);
     ctx.fill();
@@ -480,6 +484,40 @@ function paintNotes(
     }
     ctx.restore();
   });
+}
+
+export function getVisibleNotes(
+  notes: NormalizedNote[],
+  visibleStartSec: number,
+  visibleEndSec: number,
+  maxNoteDurationSec: number
+): NormalizedNote[] {
+  const startIndex = findFirstNoteStartingAtOrAfter(notes, visibleStartSec - maxNoteDurationSec);
+  const visible: NormalizedNote[] = [];
+
+  for (let index = startIndex; index < notes.length; index += 1) {
+    const note = notes[index];
+    if (note.startSec > visibleEndSec) break;
+    if (note.startSec + note.durationSec >= visibleStartSec) visible.push(note);
+  }
+
+  return visible;
+}
+
+function findFirstNoteStartingAtOrAfter(notes: NormalizedNote[], startSec: number): number {
+  let low = 0;
+  let high = notes.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (notes[mid].startSec < startSec) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
 }
 
 function paintLoopRange(

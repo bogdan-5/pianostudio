@@ -482,11 +482,8 @@ export function App() {
       const loopEndSec = range?.endSec ?? song.durationSec;
       const current = Math.min(loopEndSec, Math.max(loopStartSec, playhead));
       const next = Math.min(loopEndSec, current + delta * speed);
-      const dueNotes = notes.filter(
-        (note) =>
-          !demoStartedIdsRef.current.has(note.id) &&
-          note.startSec >= current - 0.012 &&
-          note.startSec <= next + 0.018
+      const dueNotes = notesStartingInRange(notes, current - 0.012, next + 0.018).filter(
+        (note) => !demoStartedIdsRef.current.has(note.id)
       );
 
       if (dueNotes.length) {
@@ -1283,6 +1280,35 @@ function withAddedIds(current: Set<string>, ids: string[]): Set<string> {
   const next = new Set(current);
   ids.forEach((id) => next.add(id));
   return next;
+}
+
+function notesStartingInRange(notes: NormalizedNote[], startSec: number, endSec: number): NormalizedNote[] {
+  const startIndex = findFirstNoteStartingAtOrAfter(notes, startSec);
+  const matches: NormalizedNote[] = [];
+
+  for (let index = startIndex; index < notes.length; index += 1) {
+    const note = notes[index];
+    if (note.startSec > endSec) break;
+    matches.push(note);
+  }
+
+  return matches;
+}
+
+function findFirstNoteStartingAtOrAfter(notes: NormalizedNote[], startSec: number): number {
+  let low = 0;
+  let high = notes.length;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (notes[mid].startSec < startSec) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
 }
 
 function useSyncedRef<T>(value: T) {
