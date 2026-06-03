@@ -45,6 +45,14 @@ class AudioEngine {
     this.applyActions(this.voices.noteOff(midi, this.nowMs()));
   }
 
+  async playMetronomeTick(midi: number, velocity = 0.9, durationMs = 100): Promise<void> {
+    await this.ensureReady();
+    const normalizedVelocity = Math.min(1, Math.max(0.08, velocity));
+    const note = midiToNoteName(midi);
+    this.attackNote(note, normalizedVelocity);
+    window.setTimeout(() => this.releaseNote(note), Math.max(30, durationMs));
+  }
+
   allNotesOff(): void {
     this.applyActions(this.voices.allOff());
     this.fallback?.releaseAll();

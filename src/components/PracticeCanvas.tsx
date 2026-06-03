@@ -817,7 +817,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: n
 function activeLoopSelectionColor(color: string): string {
   switch (color.toLowerCase()) {
     case "#22d3ee":
-      return "#0268a3";
+      return "#053897";
     case "#fb6fae":
     case "#f472b6":
       return "#c73681";

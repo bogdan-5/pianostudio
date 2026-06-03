@@ -68,6 +68,10 @@ const FREE_PLAY_TRACK_ID = "free-play";
 const FREE_PLAY_HISTORY_PADDING_SEC = 2;
 const EMPTY_ID_SET = new Set<string>();
 const EMPTY_PITCH_SET = new Set<number>();
+const DEFAULT_METRONOME_BPM = 120;
+const MIN_METRONOME_BPM = 40;
+const MAX_METRONOME_BPM = 240;
+const DEFAULT_METRONOME_VOLUME = 0.95;
 const ACCENT_THEMES: Array<{
   id: AccentThemeId;
   label: string;
@@ -99,10 +103,13 @@ export function App() {
   const [speed, setSpeed] = useState(1);
   const [transpose, setTranspose] = useState(0);
   const [volume, setVolume] = useState(0.3);
-  const [secondsVisible, setSecondsVisible] = useState(4);
+  const [secondsVisible, setSecondsVisible] = useState(3);
   const [rangeMode, setRangeMode] = useState<"full" | "song">("full");
   const [keyboardBaseMidi, setKeyboardBaseMidi] = useState(60);
   const [metronome, setMetronome] = useState(false);
+  const [metronomeBpm, setMetronomeBpm] = useState(DEFAULT_METRONOME_BPM);
+  const [metronomeBpmInput, setMetronomeBpmInput] = useState(String(DEFAULT_METRONOME_BPM));
+  const [metronomeVolume, setMetronomeVolume] = useState(DEFAULT_METRONOME_VOLUME);
   const [sustainPedal, setSustainPedal] = useState(false);
   const [countIn, setCountIn] = useState(true);
   const [noteGlowEnabled, setNoteGlowEnabled] = useState(true);
@@ -476,6 +483,28 @@ export function App() {
     pedalDown ? audioEngine.pedalDown() : audioEngine.pedalUp();
   }, []);
 
+  const updateMetronomeBpm = useCallback((value: number) => {
+    const bpm = clampMetronomeBpm(value);
+    setMetronomeBpm(bpm);
+    setMetronomeBpmInput(String(bpm));
+    metronomeBeatRef.current = -1;
+  }, []);
+
+  const editMetronomeBpm = useCallback((value: string) => {
+    if (!/^\d{0,3}$/.test(value)) return;
+    setMetronomeBpmInput(value);
+
+    const parsed = Number(value);
+    if (value && parsed >= MIN_METRONOME_BPM && parsed <= MAX_METRONOME_BPM) {
+      setMetronomeBpm(parsed);
+      metronomeBeatRef.current = -1;
+    }
+  }, []);
+
+  const commitMetronomeBpm = useCallback(() => {
+    updateMetronomeBpm(Number(metronomeBpmInput));
+  }, [metronomeBpmInput, updateMetronomeBpm]);
+
   const midi = useWebMidi(handleMidiEvent);
 
   useEffect(() => {
@@ -679,17 +708,17 @@ export function App() {
   useEffect(() => {
     const metronomeIsRunning = isFreePlay || isPlaying || isDemoPlaying;
     if (!metronome || !metronomeIsRunning) return;
-    const bpm = song?.bpm ?? 96;
     const metronomeCursorSec = isFreePlay ? freePlayCursorSec : cursorSec;
-    const beatLength = 60 / bpm;
+    const beatLength = 60 / metronomeBpm;
     const beat = Math.floor(metronomeCursorSec / beatLength);
     if (beat < 0 || beat === metronomeBeatRef.current) return;
     metronomeBeatRef.current = beat;
     const pitch = beat % 4 === 0 ? 96 : 84;
-    audioEngine.playNote(pitch, beat % 4 === 0 ? 0.26 : 0.18).then(() => {
-      window.setTimeout(() => audioEngine.stopNote(pitch), 70);
-    });
-  }, [cursorSec, freePlayCursorSec, isDemoPlaying, isFreePlay, isPlaying, metronome, song]);
+    void audioEngine
+      .playMetronomeTick(pitch, beat % 4 === 0 ? metronomeVolume : metronomeVolume * 0.74, 110)
+      .catch(() => undefined)
+      .finally(() => setAudioStatus(audioEngine.status));
+  }, [cursorSec, freePlayCursorSec, isDemoPlaying, isFreePlay, isPlaying, metronome, metronomeBpm, metronomeVolume]);
 
   const doSearch = useCallback(async () => {
     const trimmedQuery = query.trim();
@@ -726,10 +755,11 @@ export function App() {
       setSelectedTrackIds(nextSong.tracks.map((track) => track.id));
       setActiveSidePanel("songs");
       setTranspose(0);
+      if (nextSong.bpm) updateMetronomeBpm(Math.round(nextSong.bpm));
       setLoopRange(undefined);
       resetPractice(nextSong.durationSec, null);
     },
-    [resetPractice]
+    [resetPractice, updateMetronomeBpm]
   );
 
   const loadResult = useCallback(
@@ -849,14 +879,14 @@ export function App() {
       return;
     }
 
-    const beatMs = Math.max(320, Math.min(920, (60 / (song.bpm || 96)) * 1000));
+    const beatMs = Math.max(320, Math.min(920, (60 / metronomeBpm) * 1000));
     for (let count = 4; count >= 1; count -= 1) {
       setCountdown(count);
       await delay(beatMs);
     }
     setCountdown(0);
     setIsPlaying(true);
-  }, [countIn, countdown, cursorRef, isFreePlay, loopRangeRef, song, stopDemoPlayback]);
+  }, [countIn, countdown, cursorRef, isFreePlay, loopRangeRef, metronomeBpm, song, stopDemoPlayback]);
 
   const togglePlay = useCallback(() => {
     if (isPlaying) {
@@ -1048,7 +1078,7 @@ export function App() {
                     <h2>Welcome</h2>
                   </div>
                   <p>
-                    Welcome to Piano Studio. Play freely here, or load a song when you are ready to practice with falling notes.
+                    Welcome to Piano Studio. Play freely here, or load a song you want to practice.
                   </p>
                   <ul>
                     <li>Connect MIDI for the best feel, or use the typing keyboard as a fallback.</li>
@@ -1058,6 +1088,7 @@ export function App() {
                     <li>Drag with right click to select only notes inside a rectangle.</li>
                     <li>Use Demo to hear the selected song or loop played automatically.</li>
                     <li>Adjust volume, metronome, sustain, speed, and transpose from the bottom bar.</li>
+                    <li>Note glow can be disabled in case of lag.</li>
                   </ul>
                 </section>
               ) : null}
@@ -1440,11 +1471,50 @@ export function App() {
                 </div>
               </>
             ) : null}
-            <label className="bottomToggle">
+            <div className="bottomToggle metronomeControl">
               <MetronomeIcon />
               <span>Metronome</span>
-              <input type="checkbox" checked={metronome} onChange={(event) => setMetronome(event.target.checked)} />
-            </label>
+              <input
+                type="checkbox"
+                checked={metronome}
+                onChange={(event) => {
+                  setMetronome(event.target.checked);
+                  metronomeBeatRef.current = -1;
+                }}
+                aria-label="Metronome"
+              />
+              {metronome ? (
+                <>
+                  <span className="bottomControlDivider" aria-hidden="true" />
+                  <input
+                    className="metronomeBpmInput"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={metronomeBpmInput}
+                    onChange={(event) => editMetronomeBpm(event.currentTarget.value)}
+                    onBlur={commitMetronomeBpm}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                    aria-label="Metronome BPM"
+                  />
+                  <span className="metronomeBpmUnit">BPM</span>
+                  <span className="bottomControlDivider" aria-hidden="true" />
+                  <Volume2 size={15} className="metronomeVolumeIcon" />
+                  <input
+                    className="metronomeVolumeInput"
+                    type="range"
+                    min={0.15}
+                    max={1}
+                    step={0.01}
+                    value={metronomeVolume}
+                    onChange={(event) => setMetronomeVolume(Number(event.currentTarget.value))}
+                    aria-label="Metronome volume"
+                  />
+                </>
+              ) : null}
+            </div>
             <label className="bottomToggle">
               <SustainIcon />
               <span>Sustain</span>
@@ -1603,6 +1673,11 @@ function pruneFreePlayNotes(notes: FreePlayNote[], cursorSec: number, secondsVis
   const cutoff = cursorSec - secondsVisible - FREE_PLAY_HISTORY_PADDING_SEC - 3;
   const pruned = notes.filter((note) => note.releasedAtSec === undefined || note.startSec + note.durationSec >= cutoff);
   return pruned.length > 700 ? pruned.slice(pruned.length - 700) : pruned;
+}
+
+function clampMetronomeBpm(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_METRONOME_BPM;
+  return Math.max(MIN_METRONOME_BPM, Math.min(MAX_METRONOME_BPM, Math.round(value)));
 }
 
 function delay(ms: number): Promise<void> {

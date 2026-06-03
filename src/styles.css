@@ -1063,6 +1063,55 @@ input[type="range"] {
   height: 18px;
 }
 
+.metronomeControl {
+  flex: 0 0 auto;
+}
+
+.bottomControlDivider {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.metronomeBpmInput {
+  width: 56px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(5, 6, 9, 0.92);
+  box-shadow: none;
+  padding: 0 6px;
+  color: #fff;
+  text-align: center;
+  outline: none;
+}
+
+.bottomToggle .metronomeBpmInput {
+  width: 56px;
+  height: 28px;
+}
+
+.metronomeBpmInput:focus {
+  border-color: rgba(var(--accent-rgb), 0.72);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.14);
+}
+
+.metronomeBpmUnit {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.metronomeVolumeIcon {
+  opacity: 0.86;
+}
+
+.bottomToggle .metronomeVolumeInput {
+  width: 86px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
 .metronomeIcon,
 .sustainIcon {
   width: 18px;
