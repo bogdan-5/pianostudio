@@ -1042,7 +1042,7 @@ export function App() {
             <AppLogo />
           </div>
           <div className="brandText">
-            <h1>pianostudio</h1>
+            <h1>PIANO STUDIO</h1>
           </div>
         </div>
         <div className="topActions">
@@ -1127,7 +1127,7 @@ export function App() {
                     <h2>Welcome</h2>
                   </div>
                   <p>
-                    Welcome to pianostudio. Play freely here, or load a song you want to practice.
+                    Welcome to Piano Studio. Play freely here, or load a song you want to practice.
                   </p>
                   <ul>
                     <li>Connect MIDI for the best feel, or use the typing keyboard as a fallback.</li>

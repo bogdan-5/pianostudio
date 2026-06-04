@@ -1,6 +1,6 @@
 # pianostudio
 
-pianostudio is a local piano practice app with Web MIDI support, realistic Tone.js piano audio, MIDI search/import, and a Synthesia-style practice mode.
+Piano studio is a local piano practice app with Web MIDI support, realistic Tone.js piano audio, MIDI search/import, and a Synthesia-style practice mode.
 
 ## Run
 
