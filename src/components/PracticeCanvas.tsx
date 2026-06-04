@@ -25,8 +25,8 @@ type PracticeCanvasProps = {
 };
 
 type LoopSelectionDrag =
-  | { type: "range"; pointerId: number; startSec: number }
-  | { type: "rect"; pointerId: number; startX: number; startY: number; startSec: number };
+  | { type: "range"; pointerId: number; buttonMask: number; startSec: number }
+  | { type: "rect"; pointerId: number; buttonMask: number; startX: number; startY: number; startSec: number };
 
 type DraftLoopRect = {
   startX: number;
@@ -228,9 +228,49 @@ export const PracticeCanvas = memo(function PracticeCanvas({
     [startAutoScroll, stopAutoScroll]
   );
 
+  const cancelSelection = useCallback(() => {
+    const selection = selectionRef.current;
+    const host = hostRef.current;
+    selectionRef.current = null;
+    pointerClientXRef.current = null;
+    pointerClientYRef.current = null;
+    stopAutoScroll();
+    setDraftLoopRange(undefined);
+    setDraftLoopRect(undefined);
+    if (selection && host) releasePointerCapture(host, selection.pointerId);
+  }, [stopAutoScroll]);
+
+  const finishSelectionAtPoint = useCallback(
+    (selection: LoopSelectionDrag, host: HTMLDivElement, clientX: number, clientY: number) => {
+      const endSec = timeFromClientY(clientY, host);
+      const endPoint = pointFromClient(clientX, clientY, host);
+      cancelSelection();
+
+      if (selection.type === "range" && Math.abs(endSec - selection.startSec) >= 0.12) {
+        onLoopRangeSelect?.({ startSec: selection.startSec, endSec });
+      } else if (selection.type === "rect") {
+        const dragDistance = Math.hypot(endPoint.x - selection.startX, endPoint.y - selection.startY);
+        const rect = { startX: selection.startX, endX: endPoint.x, startSec: selection.startSec, endSec };
+        const selectedNotes = getNotesInSelectionRect(notes, rect, geometry, host.getBoundingClientRect().width);
+        if (dragDistance >= RECT_SELECTION_MIN_PX && selectedNotes.length > 0) {
+          const firstStart = Math.min(...selectedNotes.map((note) => note.startSec));
+          const lastEnd = Math.max(...selectedNotes.map((note) => note.startSec + note.durationSec));
+          onLoopRangeSelect?.({
+            startSec: firstStart,
+            endSec: lastEnd,
+            noteIds: selectedNotes.map((note) => note.id)
+          });
+        }
+      }
+    },
+    [cancelSelection, geometry, notes, onLoopRangeSelect, timeFromClientY]
+  );
+
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (!onLoopRangeSelect || (event.button !== 0 && event.button !== 2)) return;
+      const buttonMask = pointerButtonToButtonsMask(event.button);
+      if (!buttonMask) return;
       const startSec = timeFromPointer(event);
       const { x, y } = pointFromClient(event.clientX, event.clientY, event.currentTarget);
       hostRef.current = event.currentTarget;
@@ -238,8 +278,8 @@ export const PracticeCanvas = memo(function PracticeCanvas({
       pointerClientYRef.current = event.clientY;
       selectionRef.current =
         event.button === 2
-          ? { type: "rect", pointerId: event.pointerId, startX: x, startY: y, startSec }
-          : { type: "range", pointerId: event.pointerId, startSec };
+          ? { type: "rect", pointerId: event.pointerId, buttonMask, startX: x, startY: y, startSec }
+          : { type: "range", pointerId: event.pointerId, buttonMask, startSec };
       event.currentTarget.setPointerCapture(event.pointerId);
       if (event.button === 2) {
         setDraftLoopRange(undefined);
@@ -257,6 +297,11 @@ export const PracticeCanvas = memo(function PracticeCanvas({
     (event: PointerEvent<HTMLDivElement>) => {
       const selection = selectionRef.current;
       if (!selection || selection.pointerId !== event.pointerId) return;
+      if (event.pointerType === "mouse" && !isPointerButtonMaskPressed(selection.buttonMask, event.buttons)) {
+        finishSelectionAtPoint(selection, event.currentTarget, event.clientX, event.clientY);
+        event.preventDefault();
+        return;
+      }
       pointerClientXRef.current = event.clientX;
       pointerClientYRef.current = event.clientY;
       const endSec = timeFromPointer(event);
@@ -269,48 +314,17 @@ export const PracticeCanvas = memo(function PracticeCanvas({
       updateAutoScrollVelocity(event.currentTarget, event.clientY);
       event.preventDefault();
     },
-    [timeFromPointer, updateAutoScrollVelocity]
+    [finishSelectionAtPoint, timeFromPointer, updateAutoScrollVelocity]
   );
 
   const finishSelection = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       const selection = selectionRef.current;
       if (!selection || selection.pointerId !== event.pointerId) return;
-      const endSec = timeFromPointer(event);
-      const endPoint = pointFromClient(event.clientX, event.clientY, event.currentTarget);
-      selectionRef.current = null;
-      pointerClientXRef.current = null;
-      pointerClientYRef.current = null;
-      stopAutoScroll();
-      setDraftLoopRange(undefined);
-      setDraftLoopRect(undefined);
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      if (selection.type === "range" && Math.abs(endSec - selection.startSec) >= 0.12) {
-        onLoopRangeSelect?.({ startSec: selection.startSec, endSec });
-      } else if (selection.type === "rect") {
-        const dragDistance = Math.hypot(endPoint.x - selection.startX, endPoint.y - selection.startY);
-        const rect = { startX: selection.startX, endX: endPoint.x, startSec: selection.startSec, endSec };
-        const selectedNotes = getNotesInSelectionRect(
-          notes,
-          rect,
-          geometry,
-          event.currentTarget.getBoundingClientRect().width
-        );
-        if (dragDistance >= RECT_SELECTION_MIN_PX && selectedNotes.length > 0) {
-          const firstStart = Math.min(...selectedNotes.map((note) => note.startSec));
-          const lastEnd = Math.max(...selectedNotes.map((note) => note.startSec + note.durationSec));
-          onLoopRangeSelect?.({
-            startSec: firstStart,
-            endSec: lastEnd,
-            noteIds: selectedNotes.map((note) => note.id)
-          });
-        }
-      }
+      finishSelectionAtPoint(selection, event.currentTarget, event.clientX, event.clientY);
       event.preventDefault();
     },
-    [geometry, notes, onLoopRangeSelect, stopAutoScroll, timeFromPointer]
+    [finishSelectionAtPoint]
   );
 
   const handleWheel = useCallback(
@@ -328,6 +342,35 @@ export const PracticeCanvas = memo(function PracticeCanvas({
   );
 
   useEffect(() => stopAutoScroll, [stopAutoScroll]);
+
+  useEffect(() => {
+    const handleWindowPointerUp = (event: globalThis.PointerEvent) => {
+      const selection = selectionRef.current;
+      const host = hostRef.current;
+      if (!selection || !host || selection.pointerId !== event.pointerId) return;
+      finishSelectionAtPoint(selection, host, event.clientX, event.clientY);
+      event.preventDefault();
+    };
+
+    const handleWindowMouseUp = (event: MouseEvent) => {
+      const selection = selectionRef.current;
+      const host = hostRef.current;
+      if (!selection || !host) return;
+      const releasedMask = pointerButtonToButtonsMask(event.button);
+      if (releasedMask && releasedMask !== selection.buttonMask) return;
+      finishSelectionAtPoint(selection, host, event.clientX, event.clientY);
+      event.preventDefault();
+    };
+
+    window.addEventListener("pointerup", handleWindowPointerUp, true);
+    window.addEventListener("mouseup", handleWindowMouseUp, true);
+    window.addEventListener("blur", cancelSelection);
+    return () => {
+      window.removeEventListener("pointerup", handleWindowPointerUp, true);
+      window.removeEventListener("mouseup", handleWindowMouseUp, true);
+      window.removeEventListener("blur", cancelSelection);
+    };
+  }, [cancelSelection, finishSelectionAtPoint]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -412,6 +455,7 @@ export const PracticeCanvas = memo(function PracticeCanvas({
       onPointerMove={handlePointerMove}
       onPointerUp={finishSelection}
       onPointerCancel={finishSelection}
+      onLostPointerCapture={finishSelection}
       onContextMenu={(event) => event.preventDefault()}
       onWheel={handleWheel}
     >
@@ -482,6 +526,29 @@ function pointFromClient(clientX: number, clientY: number, host: HTMLDivElement)
     x: clamp(clientX - rect.left, 0, rect.width),
     y: clamp(clientY - rect.top, 0, rect.height)
   };
+}
+
+function releasePointerCapture(host: HTMLDivElement, pointerId: number): void {
+  try {
+    if (host.hasPointerCapture(pointerId)) {
+      host.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // Some browsers can invalidate capture during native mouse gestures.
+  }
+}
+
+export function pointerButtonToButtonsMask(button: number): number {
+  if (button === 0) return 1;
+  if (button === 1) return 4;
+  if (button === 2) return 2;
+  if (button === 3) return 8;
+  if (button === 4) return 16;
+  return 0;
+}
+
+export function isPointerButtonMaskPressed(buttonMask: number, buttons: number): boolean {
+  return buttonMask > 0 && (buttons & buttonMask) === buttonMask;
 }
 
 function getNotesInSelectionRect(

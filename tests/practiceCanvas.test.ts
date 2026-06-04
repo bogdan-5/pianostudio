@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedNote } from "../shared/types";
-import { buildTrackColorMap, getVisibleNotes } from "../src/components/PracticeCanvas";
+import {
+  buildTrackColorMap,
+  getVisibleNotes,
+  isPointerButtonMaskPressed,
+  pointerButtonToButtonsMask
+} from "../src/components/PracticeCanvas";
 
 describe("PracticeCanvas track color mapping", () => {
   it("uses one note color when only one track is active", () => {
@@ -33,6 +38,26 @@ describe("PracticeCanvas track color mapping", () => {
     const visible = getVisibleNotes(notes, 2.5, 4, 3);
 
     expect(visible.map((item) => item.id)).toEqual(["held", "visible"]);
+  });
+});
+
+describe("PracticeCanvas pointer button tracking", () => {
+  it("maps PointerEvent button values to the buttons bitfield", () => {
+    expect(pointerButtonToButtonsMask(0)).toBe(1);
+    expect(pointerButtonToButtonsMask(1)).toBe(4);
+    expect(pointerButtonToButtonsMask(2)).toBe(2);
+    expect(pointerButtonToButtonsMask(3)).toBe(8);
+    expect(pointerButtonToButtonsMask(4)).toBe(16);
+    expect(pointerButtonToButtonsMask(9)).toBe(0);
+  });
+
+  it("detects when the initiating mouse button is no longer pressed", () => {
+    const rightButtonMask = pointerButtonToButtonsMask(2);
+
+    expect(isPointerButtonMaskPressed(rightButtonMask, 2)).toBe(true);
+    expect(isPointerButtonMaskPressed(rightButtonMask, 3)).toBe(true);
+    expect(isPointerButtonMaskPressed(rightButtonMask, 1)).toBe(false);
+    expect(isPointerButtonMaskPressed(rightButtonMask, 0)).toBe(false);
   });
 });
 
