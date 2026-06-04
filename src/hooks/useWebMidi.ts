@@ -13,11 +13,11 @@ export type MidiDeviceInfo = {
   state: string;
 };
 
+export type MidiPermissionState = "idle" | "connecting" | "ready" | "denied" | "unsupported" | "no-devices";
+
 export function useWebMidi(onEvent: (event: MidiInputEvent) => void) {
-  const [supported] = useState(() => typeof navigator !== "undefined" && Boolean(navigator.requestMIDIAccess));
-  const [permissionState, setPermissionState] = useState<"idle" | "connecting" | "ready" | "denied" | "unsupported">(
-    supported ? "idle" : "unsupported"
-  );
+  const [supported] = useState(() => typeof navigator !== "undefined" && typeof navigator.requestMIDIAccess === "function");
+  const [permissionState, setPermissionState] = useState<MidiPermissionState>(supported ? "idle" : "unsupported");
   const [devices, setDevices] = useState<MidiDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
   const accessRef = useRef<MIDIAccess | null>(null);
@@ -29,18 +29,20 @@ export function useWebMidi(onEvent: (event: MidiInputEvent) => void) {
 
   const refreshDevices = useCallback(() => {
     const access = accessRef.current;
-    if (!access) return;
+    if (!access) return [];
     const next = [...access.inputs.values()].map((input) => ({
       id: input.id,
       name: input.name || input.manufacturer || "MIDI input",
       state: input.state
     }));
     setDevices(next);
-    setSelectedDeviceId((current) => current || next[0]?.id || "");
+    setSelectedDeviceId((current) => (next.some((device) => device.id === current) ? current : next[0]?.id || ""));
+    setPermissionState(next.length ? "ready" : "no-devices");
+    return next;
   }, []);
 
   const connect = useCallback(async () => {
-    if (!navigator.requestMIDIAccess) {
+    if (typeof navigator.requestMIDIAccess !== "function") {
       setPermissionState("unsupported");
       return;
     }
@@ -51,7 +53,6 @@ export function useWebMidi(onEvent: (event: MidiInputEvent) => void) {
       accessRef.current = access;
       access.onstatechange = refreshDevices;
       refreshDevices();
-      setPermissionState("ready");
     } catch {
       setPermissionState("denied");
     }

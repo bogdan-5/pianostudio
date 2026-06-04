@@ -1038,6 +1038,39 @@ export function App() {
     });
   }, []);
 
+  const midiButtonLabel =
+    midi.permissionState === "ready"
+      ? "MIDI Ready"
+      : midi.permissionState === "no-devices"
+        ? "No MIDI Found"
+        : midi.permissionState === "denied"
+          ? "MIDI Blocked"
+          : midi.permissionState === "unsupported"
+            ? "MIDI Unavailable"
+            : midi.permissionState === "connecting"
+              ? "Connecting..."
+              : "Connect MIDI";
+  const midiStatusLabel =
+    midi.permissionState === "ready"
+      ? `${midi.devices.length} MIDI input${midi.devices.length === 1 ? "" : "s"}`
+      : midi.permissionState === "no-devices"
+        ? "No MIDI inputs"
+        : midi.permissionState === "denied"
+          ? "MIDI blocked"
+          : midi.permissionState === "connecting"
+            ? "Checking MIDI"
+            : "Keyboard fallback";
+  const midiButtonTitle =
+    midi.permissionState === "unsupported"
+      ? "This browser or page does not expose Web MIDI. Keyboard input still works."
+      : midi.permissionState === "denied"
+        ? "MIDI permission was blocked. Change the browser permission, then try again."
+        : midi.permissionState === "no-devices"
+          ? "No MIDI input was found. Connect a keyboard, then click again."
+          : "Connect a MIDI keyboard for live input.";
+  const midiConnectDisabled = midi.permissionState === "connecting" || midi.permissionState === "unsupported";
+  const timelineProgressMax = Math.max(timelineStartSec + 0.1, timelineEndSec);
+
   return (
     <div className="appShell" style={accentStyle}>
       <header className="topBar">
@@ -1050,10 +1083,10 @@ export function App() {
           </div>
         </div>
         <div className="topActions">
-          <button className="iconTextButton" onClick={midi.connect} disabled={midi.permissionState === "connecting"}>
+          <button className="iconTextButton" onClick={midi.connect} disabled={midiConnectDisabled} title={midiButtonTitle}>
             {midi.permissionState === "ready" ? <span className="midiStatusDot" aria-hidden="true" /> : null}
             <Cable size={18} />
-            {midi.permissionState === "ready" ? "MIDI Ready" : midi.permissionState === "unsupported" ? "No Web MIDI" : "Connect MIDI"}
+            {midiButtonLabel}
           </button>
           {midi.devices.length > 1 ? (
             <select
@@ -1139,7 +1172,7 @@ export function App() {
                     <li>Practice by playing along with the falling notes in Wait or Flow mode.</li>
                     <li>Drag with left click to loop a time section for focused practice.</li>
                     <li>Drag with right click to select only notes inside a rectangle.</li>
-                    <li>Use Demo to hear the selected song or loop played automatically.</li>
+                    <li>Use Demo to hear the selected song.</li>
                     <li>Adjust volume, metronome, sustain, speed, and transpose from the bottom bar.</li>
                     <li>Note glow can be disabled in case of lag.</li>
                   </ul>
@@ -1325,7 +1358,7 @@ export function App() {
                   <section className="panelBlock smallReadout">
                     <div>
                       <Keyboard size={18} />
-                      <span>{midi.permissionState === "ready" ? `${midi.devices.length || 1} MIDI input` : "Keyboard fallback"}</span>
+                      <span>{midiStatusLabel}</span>
                     </div>
                     <div>
                       <Volume2 size={18} />
@@ -1419,9 +1452,10 @@ export function App() {
                   <input
                     type="range"
                     min={timelineStartSec}
-                    max={Math.max(timelineStartSec + 0.1, timelineEndSec)}
+                    max={timelineProgressMax}
                     step={0.01}
                     value={timelineCursorSec}
+                    style={rangeFillStyle(timelineCursorSec, timelineStartSec, timelineProgressMax)}
                     onChange={(event) => seekTo(Number(event.target.value))}
                   />
                   <span>{formatDuration(timelineEndSec)}</span>
@@ -1495,7 +1529,15 @@ export function App() {
           <div className="bottomControlStrip">
             <label className="bottomSlider">
               <Volume2 size={17} />
-              <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(event) => setVolume(Number(event.target.value))} />
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                style={rangeFillStyle(volume, 0, 1)}
+                onChange={(event) => setVolume(Number(event.target.value))}
+              />
               <strong>{Math.round(volume * 100)}%</strong>
             </label>
             {!isFreePlay ? (
@@ -1562,6 +1604,7 @@ export function App() {
                     max={1}
                     step={0.01}
                     value={metronomeVolume}
+                    style={rangeFillStyle(metronomeVolume, 0.15, 1)}
                     onChange={(event) => setMetronomeVolume(Number(event.currentTarget.value))}
                     aria-label="Metronome volume"
                   />
@@ -1658,9 +1701,25 @@ function ControlSlider({
           {suffix}
         </strong>
       </span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        style={rangeFillStyle(value, min, max)}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
     </label>
   );
+}
+
+type RangeFillStyle = CSSProperties & { "--range-percent": string };
+
+function rangeFillStyle(value: number, min: number, max: number): RangeFillStyle {
+  const span = Math.max(0.0001, max - min);
+  const percent = Math.min(100, Math.max(0, ((value - min) / span) * 100));
+  return { "--range-percent": `${percent}%` };
 }
 
 function withAddedIds(current: Set<string>, ids: string[]): Set<string> {
