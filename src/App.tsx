@@ -61,6 +61,8 @@ const EMPTY_STATS: PracticeStats = { correct: 0, wrong: 0, missed: 0, streak: 0 
 type SidePanelTab = "freePlay" | "songs" | "tracks" | "controls" | "stats";
 type AccentThemeId = "purple" | "teal" | "gold" | "blue" | "pink";
 type FreePlayNote = NormalizedNote & { releasedAtSec?: number };
+type ResetAttemptOptions = { preserveAudio?: boolean };
+type RestartPracticeOptions = { keepTransport?: boolean; range?: LoopRange | null; preserveAudio?: boolean };
 
 const DEFAULT_ACCENT_THEME: AccentThemeId = "gold";
 const ACCENT_KEY = "piano-studio-accent-theme";
@@ -244,12 +246,14 @@ export function App() {
     recentPitchTouchesRef.current.clear();
   }, []);
 
-  const resetAttemptState = useCallback(() => {
+  const resetAttemptState = useCallback((options: ResetAttemptOptions = {}) => {
     demoStartedIdsRef.current.clear();
-    clearDemoTimers();
-    clearInputMemory();
-    allNotesOffPreservingSustain();
-    setActivePitches(new Set());
+    if (!options.preserveAudio) {
+      clearDemoTimers();
+      clearInputMemory();
+      allNotesOffPreservingSustain();
+      setActivePitches(new Set());
+    }
     setWaiting(false);
     setCountdown(0);
     setCompletedIds(new Set());
@@ -259,7 +263,7 @@ export function App() {
   }, [allNotesOffPreservingSustain, clearDemoTimers, clearInputMemory]);
 
   const restartPracticeSequence = useCallback(
-    (options: { keepTransport?: boolean; range?: LoopRange | null } = {}) => {
+    (options: RestartPracticeOptions = {}) => {
       const range = options.range === undefined ? loopRangeRef.current : options.range;
       const startSec = range?.startSec ?? 0;
 
@@ -268,7 +272,7 @@ export function App() {
         setIsDemoPlaying(false);
       }
 
-      resetAttemptState();
+      resetAttemptState({ preserveAudio: options.preserveAudio });
       setCursorSec(startSec);
       setSequenceRestartToken((value) => value + 1);
     },
@@ -412,7 +416,7 @@ export function App() {
           setWaiting(false);
           if (target) setCursorSec(Math.max(cursorRef.current, target.time));
           if (loopRangeRef.current && notes.every((note) => nextCompleted.has(note.id))) {
-            window.setTimeout(() => restartPracticeSequence({ keepTransport: true }), 120);
+            window.setTimeout(() => restartPracticeSequence({ keepTransport: true, preserveAudio: true }), 120);
           }
         } else if (judged.judgement === "wrong" && (isPlaying || waiting)) {
           setStats((current) => applyJudgement(current, "wrong"));
@@ -602,7 +606,7 @@ export function App() {
         if (mode === "wait") {
           const target = getTargetCluster(notes, boundedCurrent, completedRef.current);
           if (!target && range) {
-            resetAttemptState();
+            resetAttemptState({ preserveAudio: true });
             return loopStartSec;
           }
           if (target && boundedCurrent >= target.time - 0.012) {
@@ -624,7 +628,7 @@ export function App() {
 
         if (next >= loopEndSec) {
           if (range) {
-            resetAttemptState();
+            resetAttemptState({ preserveAudio: true });
             return loopStartSec;
           }
           setIsPlaying(false);
@@ -682,7 +686,7 @@ export function App() {
 
       if (next >= loopEndSec) {
         if (range) {
-          resetAttemptState();
+          resetAttemptState({ preserveAudio: true });
           playhead = loopStartSec;
           setCursorSec(loopStartSec);
           frame = requestAnimationFrame(tick);
