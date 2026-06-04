@@ -1,5 +1,5 @@
-import { searchSongs } from "../server/songService";
-import { rejectUnsupportedMethod, type VercelRequest, type VercelResponse } from "../server/vercelHttp";
+import { searchSongs } from "../server/songService.js";
+import { rejectUnsupportedMethod, type VercelRequest, type VercelResponse } from "../server/vercelHttp.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   if (rejectUnsupportedMethod(req, res)) return;

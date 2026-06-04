@@ -1,6 +1,6 @@
 import cors from "cors";
 import express from "express";
-import { fetchMidiFile, healthResponse, searchSongs } from "./songService";
+import { fetchMidiFile, healthResponse, searchSongs } from "./songService.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 
