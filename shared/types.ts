@@ -17,6 +17,7 @@ export type SongSearchResult = {
   difficulty?: string;
   licenseLabel?: string;
   detailUrl?: string;
+  midiUrl?: string;
 };
 
 export type SearchResponse = {

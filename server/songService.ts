@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { bitMidiSearchUrl, parseBitMidiSearchResponse } from "../shared/bitmidi.js";
 import type { SearchResponse, SongSearchResult, SongSource } from "../shared/types";
 
 const USER_AGENT =
@@ -156,34 +157,15 @@ function normalizeSource(value: unknown): SongSource | "all" {
 }
 
 async function searchBitMidi(query: string, page: number): Promise<SongSearchResult[]> {
-  const url = new URL("https://bitmidi.com/search");
-  url.searchParams.set("q", query);
-  if (page > 0) url.searchParams.set("page", String(page));
-
-  const html = await fetchText(url.toString());
-  const $ = cheerio.load(html);
-  const results: SongSearchResult[] = [];
-
-  $("a[href]").each((_index, element) => {
-    const title = $(element).text().replace(/\s+/g, " ").trim();
-    const href = $(element).attr("href") ?? "";
-
-    if (!title.toLowerCase().endsWith(".mid")) return;
-    if (!href.startsWith("/") || href.includes("/uploads/")) return;
-
-    const id = href.replace(/^\/+|\/+$/g, "");
-    if (!id || id === "random") return;
-
-    results.push({
-      id,
-      source: "bitmidi",
-      title,
-      licenseLabel: "External archive",
-      detailUrl: `https://bitmidi.com/${id}`
-    });
+  const response = await fetch(bitMidiSearchUrl(query, page), {
+    headers: {
+      "user-agent": USER_AGENT,
+      accept: "application/json"
+    }
   });
 
-  return results.slice(0, 24);
+  if (!response.ok) throw new Error(`request failed (${response.status})`);
+  return parseBitMidiSearchResponse(await response.json()).slice(0, 24);
 }
 
 function searchMutopia(query: string): SongSearchResult[] {
