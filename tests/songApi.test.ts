@@ -3,6 +3,7 @@ import { downloadMidi, searchSongs } from "../src/lib/songApi";
 
 describe("songApi", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -30,7 +31,10 @@ describe("songApi", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://bitmidi.com/api/midi/search?q=queen&page=2",
-      { headers: { accept: "application/json" } }
+      expect.objectContaining({
+        headers: { accept: "application/json" },
+        signal: expect.any(AbortSignal)
+      })
     );
     expect(response.results).toEqual([
       expect.objectContaining({
@@ -40,6 +44,85 @@ describe("songApi", () => {
         midiUrl: "https://bitmidi.com/uploads/87218.mid"
       })
     ]);
+  });
+
+  it("retries a cold BitMidi search that times out", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce((_url: string, options: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          options.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            result: {
+              results: [
+                {
+                  id: 1,
+                  name: "Cold Search.mid",
+                  slug: "cold-search-mid",
+                  downloadUrl: "/uploads/1.mid"
+                }
+              ]
+            }
+          }),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const responsePromise = searchSongs("cold search", "bitmidi");
+    await vi.advanceTimersByTimeAsync(5_000);
+    const response = await responsePromise;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(response.results[0]?.title).toBe("Cold Search.mid");
+  });
+
+  it("backs off after a retryable BitMidi response", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(undefined, { status: 502 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ result: { results: [] } }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const responsePromise = searchSongs("gateway retry", "bitmidi");
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const response = await responsePromise;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(response.results).toEqual([]);
+  });
+
+  it("reuses successful BitMidi searches during the session", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: {
+            results: [{ id: 2, name: "Cached.mid", slug: "cached-mid", downloadUrl: "/uploads/2.mid" }]
+          }
+        }),
+        { status: 200 }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = await searchSongs("cache test", "bitmidi");
+    const second = await searchSongs(" CACHE TEST ", "bitmidi");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
   });
 
   it("passes a BitMidi direct download URL to the app's MIDI proxy", async () => {
