@@ -20,5 +20,6 @@
     "jsx": "react-jsx",
     "types": ["vitest/globals"]
   },
-  "include": ["src", "shared", "tests"]
+  "include": ["src", "shared", "tests"],
+  "exclude": ["tests/songService.test.ts"]
 }

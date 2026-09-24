@@ -4,15 +4,19 @@ import type { SearchResponse, SongSearchResult } from "../../shared/types";
 const BITMIDI_ATTEMPT_TIMEOUTS_MS = [4_000, 8_000];
 const BITMIDI_TIMEOUT_RETRY_DELAY_MS = 1_000;
 const BITMIDI_UPSTREAM_RETRY_DELAY_MS = 4_000;
-const BITMIDI_CACHE_LIMIT = 40;
-const bitMidiSearchCache = new Map<string, SearchResponse>();
-const bitMidiSearchesInFlight = new Map<string, Promise<SearchResponse>>();
+const SEARCH_CACHE_LIMIT = 40;
+const songSearchCache = new Map<string, SearchResponse>();
+const songSearchesInFlight = new Map<string, Promise<SearchResponse>>();
 
 export async function searchSongs(query: string, source = "all", page = 0): Promise<SearchResponse> {
   if (source === "bitmidi" && !isMidiUrl(query)) {
-    return searchBitMidi(query, page);
+    return searchRemoteArchives(query, page);
   }
 
+  return searchViaApp(query, source, page);
+}
+
+async function searchViaApp(query: string, source: string, page: number): Promise<SearchResponse> {
   const params = new URLSearchParams({ q: query, source, page: String(page) });
   const response = await fetch(`/api/search?${params.toString()}`);
   if (!response.ok) throw new Error(`Search failed (${response.status})`);
@@ -35,25 +39,59 @@ export async function downloadMidi(result: SongSearchResult): Promise<ArrayBuffe
   return response.arrayBuffer();
 }
 
-async function searchBitMidi(query: string, page: number): Promise<SearchResponse> {
+async function searchRemoteArchives(query: string, page: number): Promise<SearchResponse> {
   const cacheKey = `${query.trim().toLowerCase()}:${page}`;
-  const cached = bitMidiSearchCache.get(cacheKey);
+  const cached = songSearchCache.get(cacheKey);
   if (cached) return cached;
 
-  const existing = bitMidiSearchesInFlight.get(cacheKey);
+  const existing = songSearchesInFlight.get(cacheKey);
   if (existing) return existing;
 
-  const search = runBitMidiSearch(query, page)
+  const search = firstUsefulSearch([
+    runBitMidiSearch(query, page),
+    searchViaApp(query, "freemidi", page)
+  ])
     .then((response) => {
-      rememberBitMidiSearch(cacheKey, response);
+      rememberSearch(cacheKey, response);
       return response;
     })
     .finally(() => {
-      bitMidiSearchesInFlight.delete(cacheKey);
+      songSearchesInFlight.delete(cacheKey);
     });
 
-  bitMidiSearchesInFlight.set(cacheKey, search);
+  songSearchesInFlight.set(cacheKey, search);
   return search;
+}
+
+function firstUsefulSearch(searches: Promise<SearchResponse>[]): Promise<SearchResponse> {
+  return new Promise((resolve, reject) => {
+    let remaining = searches.length;
+    let emptyResponse: SearchResponse | undefined;
+    let lastError: unknown;
+
+    searches.forEach((search) => {
+      search.then(
+        (response) => {
+          if (response.results.length > 0) {
+            resolve(response);
+            return;
+          }
+
+          emptyResponse ??= response;
+          remaining -= 1;
+          if (remaining === 0) resolve(emptyResponse);
+        },
+        (error) => {
+          lastError = error;
+          remaining -= 1;
+          if (remaining === 0) {
+            if (emptyResponse) resolve(emptyResponse);
+            else reject(lastError);
+          }
+        }
+      );
+    });
+  });
 }
 
 async function runBitMidiSearch(query: string, page: number): Promise<SearchResponse> {
@@ -107,12 +145,12 @@ function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
-function rememberBitMidiSearch(key: string, response: SearchResponse): void {
-  if (bitMidiSearchCache.size >= BITMIDI_CACHE_LIMIT) {
-    const oldestKey = bitMidiSearchCache.keys().next().value;
-    if (oldestKey) bitMidiSearchCache.delete(oldestKey);
+function rememberSearch(key: string, response: SearchResponse): void {
+  if (songSearchCache.size >= SEARCH_CACHE_LIMIT) {
+    const oldestKey = songSearchCache.keys().next().value;
+    if (oldestKey) songSearchCache.delete(oldestKey);
   }
-  bitMidiSearchCache.set(key, response);
+  songSearchCache.set(key, response);
 }
 
 function delay(ms: number): Promise<void> {

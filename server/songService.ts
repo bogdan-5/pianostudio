@@ -4,6 +4,7 @@ import type { SearchResponse, SongSearchResult, SongSource } from "../shared/typ
 
 const USER_AGENT =
   "pianostudio/1.0 (+local development; educational MIDI search and practice)";
+const FREEMIDI_ORIGIN = "https://freemidi.org";
 
 const PUBLIC_DOMAIN_PIECES: SongSearchResult[] = [
   {
@@ -90,11 +91,13 @@ export async function searchSongs(
     };
   }
 
-  const providers = source === "all" ? ["bitmidi", "mutopia"] : [source];
+  const providers: SongSource[] =
+    source === "all" ? ["bitmidi", "freemidi", "mutopia"] : [source];
   const chunks = await Promise.all(
     providers.map(async (provider) => {
       try {
         if (provider === "bitmidi") return await searchBitMidi(query, page);
+        if (provider === "freemidi") return await searchFreeMidi(query);
         if (provider === "mutopia") return searchMutopia(query);
         return [];
       } catch (error) {
@@ -121,6 +124,9 @@ export async function fetchMidiFile(input: {
   const source = normalizeSource(input.source);
   const id = firstQueryValue(input.id).trim();
   const url = firstQueryValue(input.url).trim();
+
+  if (source === "freemidi") return fetchFreeMidiFile(id);
+
   const midiUrl = await resolveMidiUrl(source, id, url);
   const response = await fetch(midiUrl, {
     headers: {
@@ -150,7 +156,12 @@ function firstQueryValue(value: unknown): string {
 
 function normalizeSource(value: unknown): SongSource | "all" {
   const source = firstQueryValue(value).toLowerCase();
-  if (source === "bitmidi" || source === "mutopia" || source === "direct") {
+  if (
+    source === "bitmidi" ||
+    source === "freemidi" ||
+    source === "mutopia" ||
+    source === "direct"
+  ) {
     return source;
   }
   return "all";
@@ -166,6 +177,65 @@ async function searchBitMidi(query: string, page: number): Promise<SongSearchRes
 
   if (!response.ok) throw new Error(`request failed (${response.status})`);
   return parseBitMidiSearchResponse(await response.json()).slice(0, 24);
+}
+
+async function searchFreeMidi(query: string): Promise<SongSearchResult[]> {
+  const html = await fetchText(`${FREEMIDI_ORIGIN}/search?q=${encodeURIComponent(query)}`);
+  const $ = cheerio.load(html);
+  const results: SongSearchResult[] = [];
+  const seen = new Set<string>();
+
+  $("h5.card-title a[href]").each((_index, element) => {
+    if (results.length >= 24) return false;
+
+    const href = $(element).attr("href")?.trim() ?? "";
+    const id = href.replace(/^\//, "");
+    if (!/^download3-\d+(?:-|$)/i.test(id) || seen.has(id)) return;
+
+    const card = $(element).closest(".card");
+    const title = ($(element).attr("title") ?? $(element).text()).trim();
+    const artist = card.find("a[href*='artist-']").first().text().trim();
+    if (!title) return;
+
+    seen.add(id);
+    results.push({
+      id,
+      source: "freemidi",
+      title,
+      artist: artist || undefined,
+      licenseLabel: "External archive",
+      detailUrl: new URL(href, FREEMIDI_ORIGIN).toString()
+    });
+  });
+
+  return results;
+}
+
+async function fetchFreeMidiFile(id: string): Promise<MidiFileResponse> {
+  const match = /^download3-(\d+)(?:-|$)/i.exec(id);
+  if (!match) throw new Error("Invalid FreeMidi id");
+
+  const detailUrl = `${FREEMIDI_ORIGIN}/${encodeURIComponent(id)}`;
+  const response = await fetch(`${FREEMIDI_ORIGIN}/getter-${match[1]}`, {
+    redirect: "manual",
+    headers: {
+      "user-agent": USER_AGENT,
+      referer: detailUrl,
+      accept: "audio/midi, audio/x-midi, application/octet-stream, */*"
+    }
+  });
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if ((response.status !== 200 && response.status !== 302) || buffer.subarray(0, 4).toString("ascii") !== "MThd") {
+    throw new Error(`FreeMidi download failed (${response.status})`);
+  }
+
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const dispositionName = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+  return {
+    buffer,
+    contentType: "audio/midi",
+    filename: sanitizeFilename(dispositionName ?? `${id}.mid`)
+  };
 }
 
 function searchMutopia(query: string): SongSearchResult[] {

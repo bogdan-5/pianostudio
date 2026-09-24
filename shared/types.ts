@@ -6,7 +6,7 @@ export type LoopRange = {
   noteIds?: string[];
 };
 
-export type SongSource = "bitmidi" | "mutopia" | "direct";
+export type SongSource = "bitmidi" | "freemidi" | "mutopia" | "direct";
 
 export type SongSearchResult = {
   id: string;

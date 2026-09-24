@@ -14,7 +14,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "moduleDetection": "force",
-    "types": ["node"]
+    "types": ["node", "vitest/globals"]
   },
-  "include": ["api", "server", "shared", "vite.config.ts"]
+  "include": ["api", "server", "shared", "tests/songService.test.ts", "vite.config.ts"]
 }

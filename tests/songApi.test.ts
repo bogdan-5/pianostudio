@@ -8,23 +8,26 @@ describe("songApi", () => {
   });
 
   it("uses BitMidi's public API and keeps its direct download URL", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          result: {
-            results: [
-              {
-                id: 87218,
-                name: "Queen - Killer Queen.mid",
-                slug: "queen-killer-queen-mid",
-                downloadUrl: "/uploads/87218.mid"
-              }
-            ]
-          }
-        }),
-        { status: 200, headers: { "content-type": "application/json" } }
-      )
-    );
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith("/api/search")) return new Promise<Response>(() => undefined);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            result: {
+              results: [
+                {
+                  id: 87218,
+                  name: "Queen - Killer Queen.mid",
+                  slug: "queen-killer-queen-mid",
+                  downloadUrl: "/uploads/87218.mid"
+                }
+              ]
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      );
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await searchSongs("queen", "bitmidi", 2);
@@ -48,14 +51,16 @@ describe("songApi", () => {
 
   it("retries a cold BitMidi search that times out", async () => {
     vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockImplementationOnce((_url: string, options: RequestInit) =>
-        new Promise((_resolve, reject) => {
-          options.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
-        })
-      )
-      .mockResolvedValueOnce(
+    let bitMidiAttempts = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.startsWith("/api/search")) return new Promise<Response>(() => undefined);
+      bitMidiAttempts += 1;
+      if (bitMidiAttempts === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        });
+      }
+      return Promise.resolve(
         new Response(
           JSON.stringify({
             result: {
@@ -72,56 +77,104 @@ describe("songApi", () => {
           { status: 200 }
         )
       );
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const responsePromise = searchSongs("cold search", "bitmidi");
     await vi.advanceTimersByTimeAsync(5_000);
     const response = await responsePromise;
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(bitMidiAttempts).toBe(2);
     expect(response.results[0]?.title).toBe("Cold Search.mid");
   });
 
   it("backs off after a retryable BitMidi response", async () => {
     vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(undefined, { status: 502 }))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ result: { results: [] } }), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        })
+    let bitMidiAttempts = 0;
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith("/api/search")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ results: [], source: "freemidi", query: "gateway retry", page: 0 }),
+            { status: 200 }
+          )
+        );
+      }
+      bitMidiAttempts += 1;
+      return Promise.resolve(
+        bitMidiAttempts === 1
+          ? new Response(undefined, { status: 502 })
+          : new Response(JSON.stringify({ result: { results: [] } }), {
+              status: 200,
+              headers: { "content-type": "application/json" }
+            })
       );
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const responsePromise = searchSongs("gateway retry", "bitmidi");
     await vi.advanceTimersByTimeAsync(3_999);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(bitMidiAttempts).toBe(1);
     await vi.advanceTimersByTimeAsync(1);
     const response = await responsePromise;
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(bitMidiAttempts).toBe(2);
     expect(response.results).toEqual([]);
   });
 
+  it("uses the app's FreeMidi fallback when BitMidi is unavailable", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith("https://bitmidi.com")) {
+        return Promise.resolve(new Response(undefined, { status: 502 }));
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: "download3-5820-killer-queen-queen",
+                source: "freemidi",
+                title: "Killer Queen",
+                artist: "Queen"
+              }
+            ],
+            source: "freemidi",
+            query: "fallback search",
+            page: 0
+          }),
+          { status: 200 }
+        )
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await searchSongs("fallback search", "bitmidi");
+
+    expect(response.source).toBe("freemidi");
+    expect(response.results[0]?.title).toBe("Killer Queen");
+  });
+
   it("reuses successful BitMidi searches during the session", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          result: {
-            results: [{ id: 2, name: "Cached.mid", slug: "cached-mid", downloadUrl: "/uploads/2.mid" }]
-          }
-        }),
-        { status: 200 }
-      )
-    );
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith("/api/search")) return new Promise<Response>(() => undefined);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            result: {
+              results: [{ id: 2, name: "Cached.mid", slug: "cached-mid", downloadUrl: "/uploads/2.mid" }]
+            }
+          }),
+          { status: 200 }
+        )
+      );
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const first = await searchSongs("cache test", "bitmidi");
     const second = await searchSongs(" CACHE TEST ", "bitmidi");
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(second).toBe(first);
   });
 
