@@ -1,33 +1,14 @@
-# pianostudio
+# Piano Studio
 
-Piano studio is a local piano practice app with Web MIDI support, realistic Tone.js piano audio, MIDI search/import, and a Synthesia-style practice mode.
+Piano Studio brings your MIDI songs to an on-screen piano. Follow the falling notes on your digital piano, play along with your computer keyboard, or click the keys to hear how a chord sounds.
 
-## Run
+**[Play Piano Studio](https://pianostudio-app.vercel.app/)**
 
-```bash
-npm install
-npm run dev
-```
+![Piano Studio in Wait mode with separate left- and right-hand tracks. Two gold notes meet their matching keys while cyan and pink notes show what comes next.](docs/piano-studio.png)
 
-Open <http://127.0.0.1:5173/>.
+## Inside the studio
 
-## Features
-
-- 88-key digital piano with Web MIDI, on-screen input, and computer keyboard fallback.
-- Tone.js audio with Salamander Grand Piano samples through `@tonejs/piano`, plus a synthesized fallback.
-- Song search through BitMidi, Midishare, a public-domain Mutopia fallback list, direct `.mid` URLs, and local MIDI upload.
-- Falling-note practice view with strict wait mode and continuous flow mode.
-- Track selection, scrubbing, reset, speed, transpose, metronome, count-in, volume, and range zoom.
-
-Chrome or Edge are recommended for Web MIDI.
-
-## Deploy to Vercel
-
-This project is prepared for Vercel as a Vite app with root-level Vercel Functions:
-
-- Frontend build command: `npm run build`
-- Frontend output directory: `dist`
-- API routes: `/api/health`, `/api/search`, and `/api/midi`
-- Environment variables: none required
-
-After pushing to GitHub, import the repository in Vercel and use the Vite framework preset. The included `vercel.json` keeps the build settings in the repo and rewrites non-file, non-API routes back to `index.html` for the single-page app.
+- **Free Play** turns what you play into trails of light above the keys. With a MIDI piano connected, the sound responds to your touch and sustain pedal.
+- **Song practice** starts with a song you find in the studio or a MIDI file you bring along. Listen to a demo of the whole piece, then pick the tracks you want to practice.
+- **Wait and Flow** let you work on different skills. Wait pauses for each note or chord while you find the keys. Flow keeps the music moving so you can work on timing.
+- **Passage loops** let you repeat a few bars. Slow them down to work out the fingering, then bring the tempo back up when both hands feel comfortable.
